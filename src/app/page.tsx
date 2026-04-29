@@ -364,6 +364,10 @@ export default function Home() {
     newPassword: "",
     confirmPassword: "",
   });
+  const [deleteAccountForm, setDeleteAccountForm] = useState({
+    currentPassword: "",
+    confirmationText: "",
+  });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -974,6 +978,42 @@ export default function Home() {
       setNotice("Password updated.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update password");
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function deleteCoachAccount() {
+    if (!deleteAccountForm.currentPassword) {
+      setError("Current password is required.");
+      return;
+    }
+    if (deleteAccountForm.confirmationText.trim().toUpperCase() !== "DELETE") {
+      setError("Type DELETE to confirm account deletion.");
+      return;
+    }
+    if (!window.confirm("Delete your coach account permanently? This cannot be undone.")) {
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+    try {
+      await api("/api/coach/auth/delete-account", {
+        method: "POST",
+        body: JSON.stringify({
+          current_password: deleteAccountForm.currentPassword,
+          confirmation_text: deleteAccountForm.confirmationText,
+        }),
+      });
+      setDeleteAccountForm({
+        currentPassword: "",
+        confirmationText: "",
+      });
+      signOutCoach();
+      setAuthNotice("Coach account deleted.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete account");
     } finally {
       setIsLoading(false);
     }
@@ -1782,6 +1822,52 @@ export default function Home() {
                       disabled={isLoading}
                     >
                       Update password
+                    </button>
+                  </div>
+                </div>
+              </section>
+
+              <section className={styles.panel}>
+                <h2 className={styles.panelTitle}>Delete account</h2>
+                <p className={styles.panelText}>
+                  This permanently deletes your coach account. For safety, delete all active teams first.
+                </p>
+                <div className={styles.formStack}>
+                  <label className={styles.fieldLabel}>
+                    <span>Current password</span>
+                    <input
+                      type="password"
+                      className={styles.textInput}
+                      value={deleteAccountForm.currentPassword}
+                      onChange={(event) =>
+                        setDeleteAccountForm((current) => ({
+                          ...current,
+                          currentPassword: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className={styles.fieldLabel}>
+                    <span>Type DELETE to confirm</span>
+                    <input
+                      className={styles.textInput}
+                      value={deleteAccountForm.confirmationText}
+                      onChange={(event) =>
+                        setDeleteAccountForm((current) => ({
+                          ...current,
+                          confirmationText: event.target.value,
+                        }))
+                      }
+                      placeholder="DELETE"
+                    />
+                  </label>
+                  <div className={styles.modalActions}>
+                    <button
+                      className={styles.dangerButton}
+                      onClick={() => void deleteCoachAccount()}
+                      disabled={isLoading}
+                    >
+                      Delete account
                     </button>
                   </div>
                 </div>
