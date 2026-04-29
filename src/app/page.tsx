@@ -172,16 +172,16 @@ const sidebarGroups = [
 
 const authHighlights = [
   {
-    title: "Coach accounts stay in the main BravoBall backend",
-    text: "This MVP keeps coaches as normal users with a coach role flag instead of introducing a separate coach profile model.",
+    title: "Onboard players",
+    text: "Invite athletes onto teams and keep squads organized.",
   },
   {
-    title: "Same BravoBall visual language",
-    text: "The sign-in surface uses the landing-page mascot, warm neutrals, and the same yellow action color already used across the coach MVP.",
+    title: "Training beyond practice",
+    text: "See solo and app training—not just scheduled team sessions.",
   },
   {
-    title: "Configured through environment",
-    text: "The coach frontend reads its BravoBall API base URL from deployment config instead of user-editable runtime state.",
+    title: "Teams, players, dashboard",
+    text: "Manage rosters and scan progress in one visual workspace.",
   },
 ];
 
@@ -913,10 +913,8 @@ export default function Home() {
             <div className={styles.loadingAnimation}>
               <RiveComponent />
             </div>
-            <h1 className={styles.loadingTitle}>Restoring coach session</h1>
-            <p className={styles.loadingText}>
-              Connecting to the BravoBall backend and loading your coaching workspace.
-            </p>
+            <h1 className={styles.loadingTitle}>Opening your workspace</h1>
+            <p className={styles.loadingText}>Connecting to BravoBall.</p>
           </div>
         </section>
       </main>
@@ -931,10 +929,10 @@ export default function Home() {
           <div className={styles.authIntro}>
             <div className={styles.authHeroCard}>
               <div className={styles.heroCopy}>
-                <span className={styles.heroEyebrow}>Coach MVP Access</span>
-                <h1 className={styles.heroTitle}>Run your BravoBall coaching workflow from the same backend as the app.</h1>
+                <span className={styles.heroEyebrow}>Coach MVP</span>
+                <h1 className={styles.heroTitle}>Coach teams, players, and training—in one place.</h1>
                 <p className={styles.heroText}>
-                  Create a coach account, land in the protected dashboard, and manage teams without introducing a separate coach model.
+                  Onboard athletes, see training outside team sessions, and manage teams from a simple dashboard.
                 </p>
               </div>
               <div className={styles.heroAnimationWrap}>
@@ -953,7 +951,7 @@ export default function Home() {
           </div>
 
           <section className={styles.authPanel}>
-            <div className={styles.authModeTabs} role="tablist" aria-label="Coach authentication">
+            <div className={styles.authModeTabs} role="tablist" aria-label="Coach sign up or sign in">
               <button
                 className={`${styles.authModeTab} ${authMode === "signup" ? styles.authModeTabActive : ""}`}
                 onClick={() => {
@@ -963,7 +961,7 @@ export default function Home() {
                 }}
                 type="button"
               >
-                Create coach account
+                Sign up
               </button>
               <button
                 className={`${styles.authModeTab} ${authMode === "login" ? styles.authModeTabActive : ""}`}
@@ -979,14 +977,14 @@ export default function Home() {
             </div>
 
             <div className={styles.authPanelHeader}>
-              <p className={styles.eyebrow}>{authMode === "signup" ? "Coach Registration" : "Coach Sign-In"}</p>
+              <p className={styles.eyebrow}>{authMode === "signup" ? "Sign up" : "Sign in"}</p>
               <h2 className={styles.authPanelTitle}>
-                {authMode === "signup" ? "Create your coach login" : "Enter your coach credentials"}
+                {authMode === "signup" ? "Coach account" : "Welcome back"}
               </h2>
               <p className={styles.panelText}>
                 {authMode === "signup"
-                  ? "Your account is saved as a normal BravoBall user with the coach role flag enabled."
-                  : "Use the coach email or username attached to your BravoBall account."}
+                  ? "Then onboard players and open your dashboard."
+                  : "Email or username from your coach account."}
               </p>
             </div>
 
@@ -1086,7 +1084,7 @@ export default function Home() {
                     ? "Creating account..."
                     : "Signing in..."
                   : authMode === "signup"
-                    ? "Create coach account"
+                    ? "Create account"
                     : "Sign in"}
               </button>
             </div>
@@ -1212,7 +1210,7 @@ export default function Home() {
         <section className={styles.content}>
           <div className={styles.contentHeader}>
             <div>
-              <p className={styles.eyebrow}>Coach Workspace</p>
+              <p className={styles.eyebrow}>Workspace</p>
               <h1 className={styles.title}>
                 {pageTitleForView(activeView)}
                 {activeView === "teams" ? ` (${teams.length})` : ""}

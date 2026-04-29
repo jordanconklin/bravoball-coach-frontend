@@ -16,7 +16,7 @@ const potta = Potta_One({
 
 export const metadata: Metadata = {
   title: "BravoBall Coach",
-  description: "Coach MVP dashboard for BravoBall",
+  description: "Coach MVP: teams, players, training, dashboard.",
 };
 
 export default function RootLayout({
