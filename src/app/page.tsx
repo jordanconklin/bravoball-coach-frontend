@@ -99,17 +99,6 @@ type View = "teams" | "players" | "dashboard" | "settings";
 type AuthMode = "signup" | "login";
 type AuthStatus = "loading" | "unauthenticated" | "authenticated";
 
-type CoachSession = {
-  accessToken: string;
-  refreshToken: string;
-  userId: number;
-  email: string;
-  username: string;
-  firstName?: string | null;
-  lastName?: string | null;
-  role: string;
-};
-
 type CoachProfile = {
   user_id: number;
   email: string;
@@ -125,16 +114,11 @@ type AuthFormState = {
   email: string;
   password: string;
   confirmPassword: string;
+  inviteCode: string;
 };
 
-type StoredConfig = {
-  backendUrl: string;
-  coachSession: CoachSession | null;
-};
-
-const STORAGE_KEY = "bravoball-coach-checkpoint-1";
 const DEFAULT_TIME_FILTER: TimeFilter = "current_week";
-const DEFAULT_BACKEND_URL = "http://localhost:8000";
+const DEFAULT_BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:8000";
 
 const timeFilterOptions: { value: TimeFilter; label: string }[] = [
   { value: "current_week", label: "Current Week" },
@@ -194,40 +178,10 @@ const authHighlights = [
     text: "The sign-in surface uses the landing-page mascot, warm neutrals, and the same yellow action color already used across the coach MVP.",
   },
   {
-    title: "Built for local backend iteration",
-    text: "You can point the coach app at any local BravoBall API URL without leaving the login page.",
+    title: "Configured through environment",
+    text: "The coach frontend reads its BravoBall API base URL from deployment config instead of user-editable runtime state.",
   },
 ];
-
-function getInitialConfig(): StoredConfig {
-  if (typeof window === "undefined") {
-    return {
-      backendUrl: DEFAULT_BACKEND_URL,
-      coachSession: null,
-    };
-  }
-
-  const saved = window.localStorage.getItem(STORAGE_KEY);
-  if (!saved) {
-    return {
-      backendUrl: DEFAULT_BACKEND_URL,
-      coachSession: null,
-    };
-  }
-
-  try {
-    const parsed = JSON.parse(saved) as Partial<StoredConfig>;
-    return {
-      backendUrl: parsed.backendUrl || DEFAULT_BACKEND_URL,
-      coachSession: parsed.coachSession || null,
-    };
-  } catch {
-    return {
-      backendUrl: DEFAULT_BACKEND_URL,
-      coachSession: null,
-    };
-  }
-}
 
 function formatMinutes(totalMinutes: number) {
   const rounded = Math.round(totalMinutes);
@@ -273,59 +227,19 @@ function pageTitleForView(view: View) {
   }
 }
 
-function coachDisplayName(session: CoachSession | null, profile: CoachProfile | null) {
-  const firstName = profile?.first_name || session?.firstName;
-  const lastName = profile?.last_name || session?.lastName;
+function coachDisplayName(profile: CoachProfile | null) {
+  const firstName = profile?.first_name;
+  const lastName = profile?.last_name;
   const fullName = [firstName, lastName].filter(Boolean).join(" ").trim();
   if (fullName) {
     return fullName;
   }
-  return profile?.username || session?.username || "Coach";
-}
-
-function mapSessionResponseToSession(payload: {
-  access_token: string;
-  refresh_token: string;
-  user_id: number;
-  email: string;
-  username: string;
-  first_name?: string | null;
-  last_name?: string | null;
-  role: string;
-}): CoachSession {
-  return {
-    accessToken: payload.access_token,
-    refreshToken: payload.refresh_token,
-    userId: payload.user_id,
-    email: payload.email,
-    username: payload.username,
-    firstName: payload.first_name,
-    lastName: payload.last_name,
-    role: payload.role,
-  };
-}
-
-function mapSessionToProfile(session: CoachSession): CoachProfile {
-  return {
-    user_id: session.userId,
-    email: session.email,
-    username: session.username,
-    first_name: session.firstName,
-    last_name: session.lastName,
-    role: session.role,
-  };
+  return profile?.username || "Coach";
 }
 
 export default function Home() {
-  const [initialConfig] = useState(getInitialConfig);
-  const [backendUrl, setBackendUrl] = useState(initialConfig.backendUrl);
-  const [coachSession, setCoachSession] = useState<CoachSession | null>(initialConfig.coachSession);
-  const [coachProfile, setCoachProfile] = useState<CoachProfile | null>(
-    initialConfig.coachSession ? mapSessionToProfile(initialConfig.coachSession) : null,
-  );
-  const [authStatus, setAuthStatus] = useState<AuthStatus>(
-    initialConfig.coachSession ? "loading" : "unauthenticated",
-  );
+  const [coachProfile, setCoachProfile] = useState<CoachProfile | null>(null);
+  const [authStatus, setAuthStatus] = useState<AuthStatus>("loading");
   const [authMode, setAuthMode] = useState<AuthMode>("signup");
   const [authForm, setAuthForm] = useState<AuthFormState>({
     firstName: "",
@@ -333,6 +247,7 @@ export default function Home() {
     email: "",
     password: "",
     confirmPassword: "",
+    inviteCode: "",
   });
   const [authError, setAuthError] = useState<string | null>(null);
   const [authNotice, setAuthNotice] = useState<string | null>(null);
@@ -362,6 +277,10 @@ export default function Home() {
     newPassword: "",
     confirmPassword: "",
   });
+  const [deleteAccountForm, setDeleteAccountForm] = useState({
+    currentPassword: "",
+    confirmationText: "",
+  });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -373,19 +292,17 @@ export default function Home() {
     src: "Bravo_Panting.riv",
     autoplay: true,
     stateMachines: "State Machine 1",
-    animations: "Panting",
     layout: new Layout({ fit: Fit.Contain, alignment: Alignment.Center }),
   });
 
-  useEffect(() => {
-    window.localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({
-        backendUrl,
-        coachSession,
-      }),
-    );
-  }, [backendUrl, coachSession]);
+  function applyCoachProfileToSettings(profile: CoachProfile | null) {
+    setSettingsForm({
+      firstName: profile?.first_name || "",
+      lastName: profile?.last_name || "",
+      username: profile?.username || "",
+      email: profile?.email || "",
+    });
+  }
 
   async function parseErrorResponse(response: Response) {
     let detail = `${response.status} ${response.statusText}`;
@@ -398,36 +315,37 @@ export default function Home() {
     return detail;
   }
 
+  const clearCoachState = useCallback(
+    function clearCoachState() {
+      setCoachProfile(null);
+      applyCoachProfileToSettings(null);
+      setAuthStatus("unauthenticated");
+      setTeams([]);
+      setRoster(null);
+      setSelectedTeamId(null);
+      setDashboard(null);
+      setPlayerHistory(null);
+      setNotice(null);
+      setError(null);
+    },
+    [],
+  );
+
   const refreshCoachSession = useCallback(
-    async function refreshCoachSession(currentSession: CoachSession) {
-      const response = await fetch(`${backendUrl}/refresh/`, {
+    async function refreshCoachSession() {
+      const response = await fetch(`${DEFAULT_BACKEND_URL}/api/coach/auth/refresh`, {
         method: "POST",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ refresh_token: currentSession.refreshToken }),
       });
 
       if (!response.ok) {
         throw new Error(await parseErrorResponse(response));
       }
-
-      const payload = (await response.json()) as {
-        access_token: string;
-        refresh_token: string;
-        token_type: string;
-      };
-
-      const nextSession = {
-        ...currentSession,
-        accessToken: payload.access_token,
-        refreshToken: payload.refresh_token,
-      };
-
-      setCoachSession(nextSession);
-      return nextSession;
     },
-    [backendUrl],
+    [],
   );
 
   const api = useCallback(
@@ -436,27 +354,22 @@ export default function Home() {
       if (!headers.has("Content-Type")) {
         headers.set("Content-Type", "application/json");
       }
-      if (coachSession?.accessToken) {
-        headers.set("Authorization", `Bearer ${coachSession.accessToken}`);
-      }
-
-      let response = await fetch(`${backendUrl}${path}`, {
+      let response = await fetch(`${DEFAULT_BACKEND_URL}${path}`, {
         ...init,
+        credentials: "include",
         headers,
       });
 
-      if (response.status === 401 && coachSession?.refreshToken && retryOnRefresh) {
+      if (response.status === 401 && retryOnRefresh) {
         try {
-          const nextSession = await refreshCoachSession(coachSession);
-          headers.set("Authorization", `Bearer ${nextSession.accessToken}`);
-          response = await fetch(`${backendUrl}${path}`, {
+          await refreshCoachSession();
+          response = await fetch(`${DEFAULT_BACKEND_URL}${path}`, {
             ...init,
+            credentials: "include",
             headers,
           });
         } catch {
-          setCoachSession(null);
-          setCoachProfile(null);
-          setAuthStatus("unauthenticated");
+          clearCoachState();
           throw new Error("Session expired. Sign in again.");
         }
       }
@@ -467,30 +380,13 @@ export default function Home() {
 
       return (await response.json()) as T;
     },
-    [backendUrl, coachSession, refreshCoachSession],
+    [clearCoachState, refreshCoachSession],
   );
-
-  useEffect(() => {
-    if (!coachProfile) {
-      return;
-    }
-    setSettingsForm({
-      firstName: coachProfile.first_name || "",
-      lastName: coachProfile.last_name || "",
-      username: coachProfile.username || "",
-      email: coachProfile.email || "",
-    });
-  }, [coachProfile]);
 
   useEffect(() => {
     let cancelled = false;
 
     async function restoreSession() {
-      if (!coachSession) {
-        setAuthStatus("unauthenticated");
-        return;
-      }
-
       setAuthStatus("loading");
       try {
         const me = await api<CoachProfile>("/api/coach/auth/me");
@@ -498,15 +394,13 @@ export default function Home() {
           return;
         }
         setCoachProfile(me);
+        applyCoachProfileToSettings(me);
         setAuthStatus("authenticated");
-      } catch (err) {
+      } catch {
         if (cancelled) {
           return;
         }
-        setCoachSession(null);
-        setCoachProfile(null);
-        setAuthStatus("unauthenticated");
-        setAuthError(err instanceof Error ? err.message : "Unable to restore your coach session.");
+        clearCoachState();
       }
     }
 
@@ -514,7 +408,7 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
-  }, [api, coachSession]);
+  }, [api, clearCoachState]);
 
   async function handleAuthSubmit() {
     setAuthError(null);
@@ -534,6 +428,10 @@ export default function Home() {
     if (authMode === "signup") {
       if (!authForm.firstName.trim() || !authForm.lastName.trim()) {
         setAuthError("First and last name are required.");
+        return;
+      }
+      if (!authForm.inviteCode.trim()) {
+        setAuthError("Coach invite code is required.");
         return;
       }
       if (password.length < 8) {
@@ -557,14 +455,16 @@ export default function Home() {
               last_name: authForm.lastName.trim(),
               email,
               password,
+              invite_code: authForm.inviteCode.trim(),
             }
           : {
               email,
               password,
             };
 
-      const response = await fetch(`${backendUrl}${endpoint}`, {
+      const response = await fetch(`${DEFAULT_BACKEND_URL}${endpoint}`, {
         method: "POST",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
         },
@@ -575,21 +475,9 @@ export default function Home() {
         throw new Error(await parseErrorResponse(response));
       }
 
-      const session = mapSessionResponseToSession(
-        (await response.json()) as {
-          access_token: string;
-          refresh_token: string;
-          user_id: number;
-          email: string;
-          username: string;
-          first_name?: string | null;
-          last_name?: string | null;
-          role: string;
-        },
-      );
-
-      setCoachSession(session);
-      setCoachProfile(mapSessionToProfile(session));
+      const session = (await response.json()) as CoachProfile;
+      setCoachProfile(session);
+      applyCoachProfileToSettings(session);
       setAuthStatus("authenticated");
       setAuthForm({
         firstName: "",
@@ -597,6 +485,7 @@ export default function Home() {
         email,
         password: "",
         confirmPassword: "",
+        inviteCode: "",
       });
       setAuthNotice(authMode === "signup" ? "Coach account created." : null);
     } catch (err) {
@@ -607,17 +496,21 @@ export default function Home() {
   }
 
   function signOutCoach() {
-    setCoachSession(null);
-    setCoachProfile(null);
-    setAuthStatus("unauthenticated");
-    setTeams([]);
-    setRoster(null);
-    setSelectedTeamId(null);
-    setDashboard(null);
-    setPlayerHistory(null);
-    setNotice(null);
-    setError(null);
+    clearCoachState();
     setAuthNotice("Signed out.");
+  }
+
+  async function handleCoachLogout() {
+    try {
+      await fetch(`${DEFAULT_BACKEND_URL}/api/coach/auth/logout`, {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+    } catch {}
+    signOutCoach();
   }
 
   useEffect(() => {
@@ -915,17 +808,7 @@ export default function Home() {
         }),
       });
       setCoachProfile(updated);
-      setCoachSession((current) =>
-        current
-          ? {
-              ...current,
-              firstName: updated.first_name,
-              lastName: updated.last_name,
-              username: updated.username,
-              email: updated.email,
-            }
-          : current,
-      );
+      applyCoachProfileToSettings(updated);
       setNotice("Coach profile updated.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update profile");
@@ -966,6 +849,42 @@ export default function Home() {
       setNotice("Password updated.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update password");
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function deleteCoachAccount() {
+    if (!deleteAccountForm.currentPassword) {
+      setError("Current password is required.");
+      return;
+    }
+    if (deleteAccountForm.confirmationText.trim().toUpperCase() !== "DELETE") {
+      setError("Type DELETE to confirm account deletion.");
+      return;
+    }
+    if (!window.confirm("Delete your coach account permanently? This cannot be undone.")) {
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+    try {
+      await api("/api/coach/auth/delete-account", {
+        method: "POST",
+        body: JSON.stringify({
+          current_password: deleteAccountForm.currentPassword,
+          confirmation_text: deleteAccountForm.confirmationText,
+        }),
+      });
+      setDeleteAccountForm({
+        currentPassword: "",
+        confirmationText: "",
+      });
+      signOutCoach();
+      setAuthNotice("Coach account deleted.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete account");
     } finally {
       setIsLoading(false);
     }
@@ -1088,6 +1007,20 @@ export default function Home() {
                 </div>
               ) : null}
 
+              {authMode === "signup" ? (
+                <label className={styles.fieldLabel}>
+                  <span>Coach invite code</span>
+                  <input
+                    className={styles.textInput}
+                    value={authForm.inviteCode}
+                    onChange={(event) =>
+                      setAuthForm((current) => ({ ...current, inviteCode: event.target.value }))
+                    }
+                    placeholder="6-digit code"
+                  />
+                </label>
+              ) : null}
+
               <label className={styles.fieldLabel}>
                 <span>{authMode === "signup" ? "Email" : "Email or username"}</span>
                 <input
@@ -1144,18 +1077,6 @@ export default function Home() {
               </button>
             </div>
 
-            <section className={styles.localPanel}>
-              <label className={styles.localLabel} htmlFor="backend-url-login">
-                Local backend URL
-              </label>
-              <input
-                id="backend-url-login"
-                className={styles.textInput}
-                value={backendUrl}
-                onChange={(event) => setBackendUrl(event.target.value)}
-                placeholder="Backend URL"
-              />
-            </section>
           </section>
         </section>
       </main>
@@ -1211,11 +1132,11 @@ export default function Home() {
             </div>
 
             <div className={styles.sessionPill}>
-              <span className={styles.sessionName}>{coachDisplayName(coachSession, coachProfile)}</span>
-              <span className={styles.sessionMeta}>{coachProfile?.email || coachSession?.email}</span>
+              <span className={styles.sessionName}>{coachDisplayName(coachProfile)}</span>
+              <span className={styles.sessionMeta}>{coachProfile?.email}</span>
             </div>
 
-            <button className={styles.signOutButton} onClick={signOutCoach}>
+            <button className={styles.signOutButton} onClick={() => void handleCoachLogout()}>
               Sign out
             </button>
           </div>
@@ -1405,16 +1326,16 @@ export default function Home() {
               <section className={styles.panel}>
                 <h2 className={styles.panelTitle}>Coach account</h2>
                 <p className={styles.panelText}>
-                  Signed in as {coachDisplayName(coachSession, coachProfile)}.
+                  Signed in as {coachDisplayName(coachProfile)}.
                 </p>
                 <div className={styles.quickStats}>
                   <div className={styles.quickStat}>
                     <span className={styles.quickStatLabel}>Username</span>
-                    <strong>{coachProfile?.username || coachSession?.username}</strong>
+                    <strong>{coachProfile?.username}</strong>
                   </div>
                   <div className={styles.quickStat}>
                     <span className={styles.quickStatLabel}>Role</span>
-                    <strong>{coachProfile?.role || coachSession?.role || "coach"}</strong>
+                    <strong>{coachProfile?.role || "coach"}</strong>
                   </div>
                 </div>
               </section>
@@ -1764,21 +1685,54 @@ export default function Home() {
                   </div>
                 </div>
               </section>
+
+              <section className={styles.panel}>
+                <h2 className={styles.panelTitle}>Delete account</h2>
+                <p className={styles.panelText}>
+                  This permanently deletes your coach account. For safety, delete all active teams first.
+                </p>
+                <div className={styles.formStack}>
+                  <label className={styles.fieldLabel}>
+                    <span>Current password</span>
+                    <input
+                      type="password"
+                      className={styles.textInput}
+                      value={deleteAccountForm.currentPassword}
+                      onChange={(event) =>
+                        setDeleteAccountForm((current) => ({
+                          ...current,
+                          currentPassword: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className={styles.fieldLabel}>
+                    <span>Type DELETE to confirm</span>
+                    <input
+                      className={styles.textInput}
+                      value={deleteAccountForm.confirmationText}
+                      onChange={(event) =>
+                        setDeleteAccountForm((current) => ({
+                          ...current,
+                          confirmationText: event.target.value,
+                        }))
+                      }
+                      placeholder="DELETE"
+                    />
+                  </label>
+                  <div className={styles.modalActions}>
+                    <button
+                      className={styles.dangerButton}
+                      onClick={() => void deleteCoachAccount()}
+                      disabled={isLoading}
+                    >
+                      Delete account
+                    </button>
+                  </div>
+                </div>
+              </section>
             </div>
           ) : null}
-
-          <section className={styles.localPanel}>
-            <label className={styles.localLabel} htmlFor="backend-url">
-              Local backend URL
-            </label>
-            <input
-              id="backend-url"
-              className={styles.textInput}
-              value={backendUrl}
-              onChange={(event) => setBackendUrl(event.target.value)}
-              placeholder="Backend URL"
-            />
-          </section>
 
           {isCreateModalOpen ? (
             <div className={styles.modalOverlay} onClick={() => setIsCreateModalOpen(false)}>

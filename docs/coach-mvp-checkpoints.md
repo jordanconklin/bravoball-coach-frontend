@@ -215,3 +215,52 @@ Status: Complete
 - Signed-in coaches land in the protected teams/players/dashboard shell
 - Refreshing the page restores the session locally
 - Expired access tokens retry through refresh token flow before forcing a new sign-in
+
+## Checkpoint 7: Coach Admin + Guardrails
+Status: Complete
+
+### Scope
+- Add basic coach account settings in the coach frontend:
+  - first name
+  - last name
+  - username
+  - email
+  - change password
+- Add team/member management actions:
+  - remove player from selected team
+  - delete team (soft delete for MVP)
+- Add coach sign-up invite code gate
+- Add env-based backend URL support for frontend deploys
+- Add coach self-delete flow in settings
+
+### Success Conditions
+- Coaches can update their own profile from `Settings`
+- Coaches can change password from `Settings`
+- Coaches can remove players from team roster
+- Coaches can delete their own teams from UI
+- New coach registration requires invite code when backend `COACH_INVITE_CODE` is set
+- Coach frontend can use `NEXT_PUBLIC_BACKEND_URL` instead of hardcoded backend URL
+- Coaches can request account deletion safely from settings with password + explicit confirmation text
+
+### Backend endpoints added/updated
+- `PATCH /api/coach/auth/me`
+- `POST /api/coach/auth/change-password`
+- `POST /api/coach/auth/delete-account`
+- `DELETE /api/coach/teams/{team_id}/members/{user_id}`
+- `DELETE /api/coach/teams/{team_id}`
+- `POST /api/coach/auth/register` now supports invite-code validation (`invite_code`) when `COACH_INVITE_CODE` is set
+
+### Environment/config notes
+- Backend env:
+  - `COACH_INVITE_CODE` controls coach sign-up gating
+- Coach frontend env:
+  - `NEXT_PUBLIC_BACKEND_URL` is supported (fallback remains `http://localhost:8000`)
+- `.env.example` in coach frontend was added for backend URL template use
+
+### Safety notes for account deletion
+- Coach account deletion requires:
+  - current password
+  - confirmation text `DELETE`
+- Deletion is blocked if coach still has active teams
+- Refresh tokens are revoked before account deletion commit
+- Dev bypass mode (`DEV_COACH_BYPASS_AUTH_ENABLED=true`) blocks delete-account endpoint to avoid deleting synthetic dev coach context
