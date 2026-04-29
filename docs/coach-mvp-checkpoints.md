@@ -195,8 +195,23 @@ The following is already finished in the current MVP build.
 - No player join-code flow has been added to the mobile app yet
 
 ## Next Implementation Order
-1. Add real coach sign-in / sign-out and a protected coach app shell
-2. Add mobile-side join-team flow for players
-3. Revisit whether coaches should stay as `User` + role or move to a separate profile layer
-4. Add multi-manager support later with a join table such as `team_managers`
-5. Revisit indexing after real coach usage proves the hot queries
+1. Add mobile-side join-team flow for players
+2. Revisit whether coaches should stay as `User` + role or move to a separate profile layer
+3. Add multi-manager support later with a join table such as `team_managers`
+4. Revisit indexing after real coach usage proves the hot queries
+
+## Checkpoint 6: Coach Auth Shell
+Status: Complete
+
+### Scope
+- Add real coach sign-up and sign-in against the BravoBall backend
+- Protect the coach frontend with an auth wrapper
+- Keep coaches in the existing `users` table for MVP using the `role` field
+- Reuse the landing-page `Bravo_Panting.riv` mascot animation on the login page
+
+### Success Conditions
+- A coach can create an account from the coach frontend
+- The backend persists that account as a BravoBall user with `role = "coach"`
+- Signed-in coaches land in the protected teams/players/dashboard shell
+- Refreshing the page restores the session locally
+- Expired access tokens retry through refresh token flow before forcing a new sign-in
