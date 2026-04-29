@@ -141,6 +141,7 @@ const dashboardCategoryLabels: Record<string, string> = {
   defending: "Defending",
   goalkeeping: "Goalkeeping",
   fitness: "Fitness",
+  mental_training: "Mental Training",
 };
 
 const dashboardCategoryColors: Record<string, string> = {
@@ -151,6 +152,7 @@ const dashboardCategoryColors: Record<string, string> = {
   defending: "#D69B54",
   goalkeeping: "#BFC7D6",
   fitness: "#68A97B",
+  mental_training: "#D96FA8",
 };
 
 const sidebarGroups = [
