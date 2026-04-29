@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Alignment, Fit, Layout, useRive } from "rive-react";
 import styles from "./page.module.css";
 
 type TeamSummary = {
@@ -94,8 +95,46 @@ type TimeFilter =
   | "last_month"
   | "all_time";
 
+type View = "teams" | "players" | "dashboard" | "settings";
+type AuthMode = "signup" | "login";
+type AuthStatus = "loading" | "unauthenticated" | "authenticated";
+
+type CoachSession = {
+  accessToken: string;
+  refreshToken: string;
+  userId: number;
+  email: string;
+  username: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  role: string;
+};
+
+type CoachProfile = {
+  user_id: number;
+  email: string;
+  username: string;
+  first_name?: string | null;
+  last_name?: string | null;
+  role: string;
+};
+
+type AuthFormState = {
+  firstName: string;
+  lastName: string;
+  email: string;
+  password: string;
+  confirmPassword: string;
+};
+
+type StoredConfig = {
+  backendUrl: string;
+  coachSession: CoachSession | null;
+};
+
 const STORAGE_KEY = "bravoball-coach-checkpoint-1";
 const DEFAULT_TIME_FILTER: TimeFilter = "current_week";
+const DEFAULT_BACKEND_URL = "http://localhost:8000";
 
 const timeFilterOptions: { value: TimeFilter; label: string }[] = [
   { value: "current_week", label: "Current Week" },
@@ -139,25 +178,54 @@ const sidebarGroups = [
     title: "Player Tracking",
     items: ["Dashboard"],
   },
+  {
+    title: "Account",
+    items: ["Settings"],
+  },
 ];
 
-type View = "teams" | "players" | "dashboard";
+const authHighlights = [
+  {
+    title: "Coach accounts stay in the main BravoBall backend",
+    text: "This MVP keeps coaches as normal users with a coach role flag instead of introducing a separate coach profile model.",
+  },
+  {
+    title: "Same BravoBall visual language",
+    text: "The sign-in surface uses the landing-page mascot, warm neutrals, and the same yellow action color already used across the coach MVP.",
+  },
+  {
+    title: "Built for local backend iteration",
+    text: "You can point the coach app at any local BravoBall API URL without leaving the login page.",
+  },
+];
 
-function getInitialConfig() {
+function getInitialConfig(): StoredConfig {
   if (typeof window === "undefined") {
-    return { backendUrl: "http://localhost:8000" };
+    return {
+      backendUrl: DEFAULT_BACKEND_URL,
+      coachSession: null,
+    };
   }
 
   const saved = window.localStorage.getItem(STORAGE_KEY);
   if (!saved) {
-    return { backendUrl: "http://localhost:8000" };
+    return {
+      backendUrl: DEFAULT_BACKEND_URL,
+      coachSession: null,
+    };
   }
 
   try {
-    const parsed = JSON.parse(saved) as { backendUrl?: string };
-    return { backendUrl: parsed.backendUrl || "http://localhost:8000" };
+    const parsed = JSON.parse(saved) as Partial<StoredConfig>;
+    return {
+      backendUrl: parsed.backendUrl || DEFAULT_BACKEND_URL,
+      coachSession: parsed.coachSession || null,
+    };
   } catch {
-    return { backendUrl: "http://localhost:8000" };
+    return {
+      backendUrl: DEFAULT_BACKEND_URL,
+      coachSession: null,
+    };
   }
 }
 
@@ -200,12 +268,76 @@ function pageTitleForView(view: View) {
       return "Players";
     case "dashboard":
       return "Dashboard";
+    case "settings":
+      return "General Settings";
   }
+}
+
+function coachDisplayName(session: CoachSession | null, profile: CoachProfile | null) {
+  const firstName = profile?.first_name || session?.firstName;
+  const lastName = profile?.last_name || session?.lastName;
+  const fullName = [firstName, lastName].filter(Boolean).join(" ").trim();
+  if (fullName) {
+    return fullName;
+  }
+  return profile?.username || session?.username || "Coach";
+}
+
+function mapSessionResponseToSession(payload: {
+  access_token: string;
+  refresh_token: string;
+  user_id: number;
+  email: string;
+  username: string;
+  first_name?: string | null;
+  last_name?: string | null;
+  role: string;
+}): CoachSession {
+  return {
+    accessToken: payload.access_token,
+    refreshToken: payload.refresh_token,
+    userId: payload.user_id,
+    email: payload.email,
+    username: payload.username,
+    firstName: payload.first_name,
+    lastName: payload.last_name,
+    role: payload.role,
+  };
+}
+
+function mapSessionToProfile(session: CoachSession): CoachProfile {
+  return {
+    user_id: session.userId,
+    email: session.email,
+    username: session.username,
+    first_name: session.firstName,
+    last_name: session.lastName,
+    role: session.role,
+  };
 }
 
 export default function Home() {
   const [initialConfig] = useState(getInitialConfig);
   const [backendUrl, setBackendUrl] = useState(initialConfig.backendUrl);
+  const [coachSession, setCoachSession] = useState<CoachSession | null>(initialConfig.coachSession);
+  const [coachProfile, setCoachProfile] = useState<CoachProfile | null>(
+    initialConfig.coachSession ? mapSessionToProfile(initialConfig.coachSession) : null,
+  );
+  const [authStatus, setAuthStatus] = useState<AuthStatus>(
+    initialConfig.coachSession ? "loading" : "unauthenticated",
+  );
+  const [authMode, setAuthMode] = useState<AuthMode>("signup");
+  const [authForm, setAuthForm] = useState<AuthFormState>({
+    firstName: "",
+    lastName: "",
+    email: "",
+    password: "",
+    confirmPassword: "",
+  });
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [authNotice, setAuthNotice] = useState<string | null>(null);
+  const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
+
   const [teamName, setTeamName] = useState("");
   const [usernameToAdd, setUsernameToAdd] = useState("");
   const [teams, setTeams] = useState<TeamSummary[]>([]);
@@ -213,92 +345,304 @@ export default function Home() {
   const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null);
   const [timeFilter, setTimeFilter] = useState<TimeFilter>(DEFAULT_TIME_FILTER);
   const [activeView, setActiveView] = useState<View>("teams");
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isAddPlayerModalOpen, setIsAddPlayerModalOpen] = useState(false);
   const [isPlayerDetailOpen, setIsPlayerDetailOpen] = useState(false);
   const [playerHistory, setPlayerHistory] = useState<PlayerSessionHistory | null>(null);
   const [dashboard, setDashboard] = useState<TeamDashboard | null>(null);
+  const [settingsForm, setSettingsForm] = useState({
+    firstName: "",
+    lastName: "",
+    username: "",
+    email: "",
+  });
+  const [passwordForm, setPasswordForm] = useState({
+    currentPassword: "",
+    newPassword: "",
+    confirmPassword: "",
+  });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+
   const createInputRef = useRef<HTMLInputElement | null>(null);
   const addPlayerRef = useRef<HTMLInputElement | null>(null);
 
+  const { RiveComponent } = useRive({
+    src: "Bravo_Panting.riv",
+    autoplay: true,
+    stateMachines: "State Machine 1",
+    animations: "Panting",
+    layout: new Layout({ fit: Fit.Contain, alignment: Alignment.Center }),
+  });
+
   useEffect(() => {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ backendUrl }));
-  }, [backendUrl]);
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        backendUrl,
+        coachSession,
+      }),
+    );
+  }, [backendUrl, coachSession]);
 
-  const api = useCallback(
-    async function api<T>(path: string, init?: RequestInit): Promise<T> {
-      const headers = new Headers(init?.headers ?? {});
-      headers.set("Content-Type", "application/json");
+  async function parseErrorResponse(response: Response) {
+    let detail = `${response.status} ${response.statusText}`;
+    try {
+      const body = (await response.json()) as { detail?: string };
+      if (body.detail) {
+        detail = body.detail;
+      }
+    } catch {}
+    return detail;
+  }
 
-      const response = await fetch(`${backendUrl}${path}`, {
-        ...init,
-        headers,
+  const refreshCoachSession = useCallback(
+    async function refreshCoachSession(currentSession: CoachSession) {
+      const response = await fetch(`${backendUrl}/refresh/`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ refresh_token: currentSession.refreshToken }),
       });
 
       if (!response.ok) {
-        let detail = `${response.status} ${response.statusText}`;
-        try {
-          const body = (await response.json()) as { detail?: string };
-          if (body.detail) {
-            detail = body.detail;
-          }
-        } catch {}
-        throw new Error(detail);
+        throw new Error(await parseErrorResponse(response));
       }
 
-      return (await response.json()) as T;
+      const payload = (await response.json()) as {
+        access_token: string;
+        refresh_token: string;
+        token_type: string;
+      };
+
+      const nextSession = {
+        ...currentSession,
+        accessToken: payload.access_token,
+        refreshToken: payload.refresh_token,
+      };
+
+      setCoachSession(nextSession);
+      return nextSession;
     },
     [backendUrl],
   );
 
-  const loadTeams = useCallback(async () => {
-    const nextTeams = await api<TeamSummary[]>(
-      `/api/coach/teams/me?time_filter=${timeFilter}`,
-    );
-    setTeams(nextTeams);
-    setSelectedTeamId((current) =>
-      nextTeams.some((team) => team.id === current) ? current : nextTeams[0]?.id ?? null,
-    );
+  const api = useCallback(
+    async function api<T>(path: string, init?: RequestInit, retryOnRefresh = true): Promise<T> {
+      const headers = new Headers(init?.headers ?? {});
+      if (!headers.has("Content-Type")) {
+        headers.set("Content-Type", "application/json");
+      }
+      if (coachSession?.accessToken) {
+        headers.set("Authorization", `Bearer ${coachSession.accessToken}`);
+      }
+
+      let response = await fetch(`${backendUrl}${path}`, {
+        ...init,
+        headers,
+      });
+
+      if (response.status === 401 && coachSession?.refreshToken && retryOnRefresh) {
+        try {
+          const nextSession = await refreshCoachSession(coachSession);
+          headers.set("Authorization", `Bearer ${nextSession.accessToken}`);
+          response = await fetch(`${backendUrl}${path}`, {
+            ...init,
+            headers,
+          });
+        } catch {
+          setCoachSession(null);
+          setCoachProfile(null);
+          setAuthStatus("unauthenticated");
+          throw new Error("Session expired. Sign in again.");
+        }
+      }
+
+      if (!response.ok) {
+        throw new Error(await parseErrorResponse(response));
+      }
+
+      return (await response.json()) as T;
+    },
+    [backendUrl, coachSession, refreshCoachSession],
+  );
+
+  useEffect(() => {
+    if (!coachProfile) {
+      return;
+    }
+    setSettingsForm({
+      firstName: coachProfile.first_name || "",
+      lastName: coachProfile.last_name || "",
+      username: coachProfile.username || "",
+      email: coachProfile.email || "",
+    });
+  }, [coachProfile]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function restoreSession() {
+      if (!coachSession) {
+        setAuthStatus("unauthenticated");
+        return;
+      }
+
+      setAuthStatus("loading");
+      try {
+        const me = await api<CoachProfile>("/api/coach/auth/me");
+        if (cancelled) {
+          return;
+        }
+        setCoachProfile(me);
+        setAuthStatus("authenticated");
+      } catch (err) {
+        if (cancelled) {
+          return;
+        }
+        setCoachSession(null);
+        setCoachProfile(null);
+        setAuthStatus("unauthenticated");
+        setAuthError(err instanceof Error ? err.message : "Unable to restore your coach session.");
+      }
+    }
+
+    void restoreSession();
+    return () => {
+      cancelled = true;
+    };
+  }, [api, coachSession]);
+
+  async function handleAuthSubmit() {
+    setAuthError(null);
+    setAuthNotice(null);
+
+    const email = authForm.email.trim();
+    const password = authForm.password;
+
+    if (!email) {
+      setAuthError("Email is required.");
+      return;
+    }
+    if (!password) {
+      setAuthError("Password is required.");
+      return;
+    }
+    if (authMode === "signup") {
+      if (!authForm.firstName.trim() || !authForm.lastName.trim()) {
+        setAuthError("First and last name are required.");
+        return;
+      }
+      if (password.length < 8) {
+        setAuthError("Password must be at least 8 characters.");
+        return;
+      }
+      if (password !== authForm.confirmPassword) {
+        setAuthError("Passwords do not match.");
+        return;
+      }
+    }
+
+    setIsAuthSubmitting(true);
+    try {
+      const endpoint =
+        authMode === "signup" ? "/api/coach/auth/register" : "/api/coach/auth/login";
+      const payload =
+        authMode === "signup"
+          ? {
+              first_name: authForm.firstName.trim(),
+              last_name: authForm.lastName.trim(),
+              email,
+              password,
+            }
+          : {
+              email,
+              password,
+            };
+
+      const response = await fetch(`${backendUrl}${endpoint}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        throw new Error(await parseErrorResponse(response));
+      }
+
+      const session = mapSessionResponseToSession(
+        (await response.json()) as {
+          access_token: string;
+          refresh_token: string;
+          user_id: number;
+          email: string;
+          username: string;
+          first_name?: string | null;
+          last_name?: string | null;
+          role: string;
+        },
+      );
+
+      setCoachSession(session);
+      setCoachProfile(mapSessionToProfile(session));
+      setAuthStatus("authenticated");
+      setAuthForm({
+        firstName: "",
+        lastName: "",
+        email,
+        password: "",
+        confirmPassword: "",
+      });
+      setAuthNotice(authMode === "signup" ? "Coach account created." : null);
+    } catch (err) {
+      setAuthError(err instanceof Error ? err.message : "Unable to sign you in.");
+    } finally {
+      setIsAuthSubmitting(false);
+    }
+  }
+
+  function signOutCoach() {
+    setCoachSession(null);
+    setCoachProfile(null);
+    setAuthStatus("unauthenticated");
+    setTeams([]);
+    setRoster(null);
+    setSelectedTeamId(null);
+    setDashboard(null);
+    setPlayerHistory(null);
     setNotice(null);
-  }, [api, timeFilter]);
+    setError(null);
+    setAuthNotice("Signed out.");
+  }
 
-  const loadRosterForTeam = useCallback(
-    async (teamId: number) => {
-      const nextRoster = await api<TeamRoster>(
-        `/api/coach/teams/${teamId}/members?time_filter=${timeFilter}`,
-      );
-      setRoster(nextRoster);
-    },
-    [api, timeFilter],
-  );
+  useEffect(() => {
+    if (!isMobileSidebarOpen) {
+      return;
+    }
 
-  const loadPlayerHistory = useCallback(
-    async (teamId: number, userId: number) => {
-      const nextHistory = await api<PlayerSessionHistory>(
-        `/api/coach/teams/${teamId}/members/${userId}/sessions?time_filter=${timeFilter}`,
-      );
-      setPlayerHistory(nextHistory);
-    },
-    [api, timeFilter],
-  );
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setIsMobileSidebarOpen(false);
+      }
+    }
 
-  const loadDashboard = useCallback(
-    async (teamId: number) => {
-      const nextDashboard = await api<TeamDashboard>(
-        `/api/coach/dashboard?team_id=${teamId}&time_filter=${timeFilter}`,
-      );
-      setDashboard(nextDashboard);
-    },
-    [api, timeFilter],
-  );
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isMobileSidebarOpen]);
 
   useEffect(() => {
     let cancelled = false;
 
     async function initialLoad() {
+      if (authStatus !== "authenticated") {
+        return;
+      }
+
       setIsLoading(true);
       setError(null);
       try {
@@ -328,14 +672,18 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
-  }, [api, timeFilter]);
+  }, [api, authStatus, timeFilter]);
 
   useEffect(() => {
     let cancelled = false;
 
-    async function loadRoster() {
+    async function loadTeamData() {
+      if (authStatus !== "authenticated") {
+        return;
+      }
       if (!selectedTeamId) {
         setRoster(null);
+        setDashboard(null);
         return;
       }
 
@@ -346,6 +694,7 @@ export default function Home() {
         if (!cancelled) {
           setRoster(nextRoster);
         }
+
         if (activeView === "dashboard") {
           const nextDashboard = await api<TeamDashboard>(
             `/api/coach/dashboard?team_id=${selectedTeamId}&time_filter=${timeFilter}`,
@@ -361,11 +710,11 @@ export default function Home() {
       }
     }
 
-    void loadRoster();
+    void loadTeamData();
     return () => {
       cancelled = true;
     };
-  }, [activeView, api, selectedTeamId, timeFilter]);
+  }, [activeView, api, authStatus, selectedTeamId, timeFilter]);
 
   const selectedTeam = useMemo(
     () => teams.find((team) => team.id === selectedTeamId) ?? null,
@@ -404,6 +753,38 @@ export default function Home() {
       items: slices,
     };
   }, [dashboard]);
+
+  async function loadTeams() {
+    const nextTeams = await api<TeamSummary[]>(
+      `/api/coach/teams/me?time_filter=${timeFilter}`,
+    );
+    setTeams(nextTeams);
+    setSelectedTeamId((current) =>
+      nextTeams.some((team) => team.id === current) ? current : nextTeams[0]?.id ?? null,
+    );
+    setNotice(null);
+  }
+
+  async function loadRosterForTeam(teamId: number) {
+    const nextRoster = await api<TeamRoster>(
+      `/api/coach/teams/${teamId}/members?time_filter=${timeFilter}`,
+    );
+    setRoster(nextRoster);
+  }
+
+  async function loadPlayerHistory(teamId: number, userId: number) {
+    const nextHistory = await api<PlayerSessionHistory>(
+      `/api/coach/teams/${teamId}/members/${userId}/sessions?time_filter=${timeFilter}`,
+    );
+    setPlayerHistory(nextHistory);
+  }
+
+  async function loadDashboard(teamId: number) {
+    const nextDashboard = await api<TeamDashboard>(
+      `/api/coach/dashboard?team_id=${teamId}&time_filter=${timeFilter}`,
+    );
+    setDashboard(nextDashboard);
+  }
 
   async function createTeam() {
     if (!teamName.trim()) {
@@ -461,22 +842,359 @@ export default function Home() {
     }
   }
 
+  async function removePlayerFromTeam(userId: number) {
+    if (!selectedTeamId) {
+      setError("Select a team first");
+      return;
+    }
+    if (!window.confirm("Remove this player from the selected team?")) {
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+    try {
+      await api(`/api/coach/teams/${selectedTeamId}/members/${userId}`, {
+        method: "DELETE",
+      });
+      setNotice("Player removed from team");
+      await loadTeams();
+      await loadRosterForTeam(selectedTeamId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to remove player");
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function deleteSelectedTeam() {
+    if (!selectedTeamId || !selectedTeam) {
+      setError("Select a team first");
+      return;
+    }
+    if (!window.confirm(`Delete team "${selectedTeam.name}"?`)) {
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+    try {
+      await api(`/api/coach/teams/${selectedTeamId}`, { method: "DELETE" });
+      setNotice(`Deleted ${selectedTeam.name}`);
+      setSelectedTeamId(null);
+      setRoster(null);
+      setDashboard(null);
+      await loadTeams();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete team");
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function saveCoachSettings() {
+    if (!settingsForm.firstName.trim() || !settingsForm.lastName.trim()) {
+      setError("First and last name are required.");
+      return;
+    }
+    if (!settingsForm.username.trim() || !settingsForm.email.trim()) {
+      setError("Username and email are required.");
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+    try {
+      const updated = await api<CoachProfile>("/api/coach/auth/me", {
+        method: "PATCH",
+        body: JSON.stringify({
+          first_name: settingsForm.firstName.trim(),
+          last_name: settingsForm.lastName.trim(),
+          username: settingsForm.username.trim(),
+          email: settingsForm.email.trim(),
+        }),
+      });
+      setCoachProfile(updated);
+      setCoachSession((current) =>
+        current
+          ? {
+              ...current,
+              firstName: updated.first_name,
+              lastName: updated.last_name,
+              username: updated.username,
+              email: updated.email,
+            }
+          : current,
+      );
+      setNotice("Coach profile updated.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update profile");
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function changeCoachPassword() {
+    if (!passwordForm.currentPassword || !passwordForm.newPassword) {
+      setError("Current and new password are required.");
+      return;
+    }
+    if (passwordForm.newPassword.length < 8) {
+      setError("New password must be at least 8 characters.");
+      return;
+    }
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      setError("New password confirmation does not match.");
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+    try {
+      await api("/api/coach/auth/change-password", {
+        method: "POST",
+        body: JSON.stringify({
+          current_password: passwordForm.currentPassword,
+          new_password: passwordForm.newPassword,
+        }),
+      });
+      setPasswordForm({
+        currentPassword: "",
+        newPassword: "",
+        confirmPassword: "",
+      });
+      setNotice("Password updated.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update password");
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  if (authStatus === "loading") {
+    return (
+      <main className={styles.authPage}>
+        <AuthTopbar />
+        <section className={styles.authLoadingWrap}>
+          <div className={styles.authLoadingCard}>
+            <div className={styles.loadingAnimation}>
+              <RiveComponent />
+            </div>
+            <h1 className={styles.loadingTitle}>Restoring coach session</h1>
+            <p className={styles.loadingText}>
+              Connecting to the BravoBall backend and loading your coaching workspace.
+            </p>
+          </div>
+        </section>
+      </main>
+    );
+  }
+
+  if (authStatus !== "authenticated") {
+    return (
+      <main className={styles.authPage}>
+        <AuthTopbar />
+        <section className={styles.authLayout}>
+          <div className={styles.authIntro}>
+            <div className={styles.authHeroCard}>
+              <div className={styles.heroCopy}>
+                <span className={styles.heroEyebrow}>Coach MVP Access</span>
+                <h1 className={styles.heroTitle}>Run your BravoBall coaching workflow from the same backend as the app.</h1>
+                <p className={styles.heroText}>
+                  Create a coach account, land in the protected dashboard, and manage teams without introducing a separate coach model.
+                </p>
+              </div>
+              <div className={styles.heroAnimationWrap}>
+                <RiveComponent />
+              </div>
+            </div>
+
+            <div className={styles.highlightGrid}>
+              {authHighlights.map((item) => (
+                <article key={item.title} className={styles.highlightCard}>
+                  <h2 className={styles.highlightTitle}>{item.title}</h2>
+                  <p className={styles.highlightText}>{item.text}</p>
+                </article>
+              ))}
+            </div>
+          </div>
+
+          <section className={styles.authPanel}>
+            <div className={styles.authModeTabs} role="tablist" aria-label="Coach authentication">
+              <button
+                className={`${styles.authModeTab} ${authMode === "signup" ? styles.authModeTabActive : ""}`}
+                onClick={() => {
+                  setAuthMode("signup");
+                  setAuthError(null);
+                  setAuthNotice(null);
+                }}
+                type="button"
+              >
+                Create coach account
+              </button>
+              <button
+                className={`${styles.authModeTab} ${authMode === "login" ? styles.authModeTabActive : ""}`}
+                onClick={() => {
+                  setAuthMode("login");
+                  setAuthError(null);
+                  setAuthNotice(null);
+                }}
+                type="button"
+              >
+                Sign in
+              </button>
+            </div>
+
+            <div className={styles.authPanelHeader}>
+              <p className={styles.eyebrow}>{authMode === "signup" ? "Coach Registration" : "Coach Sign-In"}</p>
+              <h2 className={styles.authPanelTitle}>
+                {authMode === "signup" ? "Create your coach login" : "Enter your coach credentials"}
+              </h2>
+              <p className={styles.panelText}>
+                {authMode === "signup"
+                  ? "Your account is saved as a normal BravoBall user with the coach role flag enabled."
+                  : "Use the coach email or username attached to your BravoBall account."}
+              </p>
+            </div>
+
+            {authError ? <Banner tone="error" text={authError} /> : null}
+            {authNotice ? <Banner tone="success" text={authNotice} /> : null}
+
+            <div className={styles.authForm}>
+              {authMode === "signup" ? (
+                <div className={styles.authNameRow}>
+                  <label className={styles.fieldLabel}>
+                    <span>First name</span>
+                    <input
+                      className={styles.textInput}
+                      value={authForm.firstName}
+                      onChange={(event) =>
+                        setAuthForm((current) => ({ ...current, firstName: event.target.value }))
+                      }
+                      placeholder="Jordan"
+                    />
+                  </label>
+                  <label className={styles.fieldLabel}>
+                    <span>Last name</span>
+                    <input
+                      className={styles.textInput}
+                      value={authForm.lastName}
+                      onChange={(event) =>
+                        setAuthForm((current) => ({ ...current, lastName: event.target.value }))
+                      }
+                      placeholder="Coach"
+                    />
+                  </label>
+                </div>
+              ) : null}
+
+              <label className={styles.fieldLabel}>
+                <span>{authMode === "signup" ? "Email" : "Email or username"}</span>
+                <input
+                  className={styles.textInput}
+                  value={authForm.email}
+                  onChange={(event) =>
+                    setAuthForm((current) => ({ ...current, email: event.target.value }))
+                  }
+                  placeholder={authMode === "signup" ? "coach@example.com" : "coach@example.com"}
+                />
+              </label>
+
+              <label className={styles.fieldLabel}>
+                <span>Password</span>
+                <input
+                  className={styles.textInput}
+                  type="password"
+                  value={authForm.password}
+                  onChange={(event) =>
+                    setAuthForm((current) => ({ ...current, password: event.target.value }))
+                  }
+                  placeholder="At least 8 characters"
+                />
+              </label>
+
+              {authMode === "signup" ? (
+                <label className={styles.fieldLabel}>
+                  <span>Confirm password</span>
+                  <input
+                    className={styles.textInput}
+                    type="password"
+                    value={authForm.confirmPassword}
+                    onChange={(event) =>
+                      setAuthForm((current) => ({ ...current, confirmPassword: event.target.value }))
+                    }
+                    placeholder="Repeat password"
+                  />
+                </label>
+              ) : null}
+
+              <button
+                className={styles.authSubmitButton}
+                onClick={() => void handleAuthSubmit()}
+                disabled={isAuthSubmitting}
+                type="button"
+              >
+                {isAuthSubmitting
+                  ? authMode === "signup"
+                    ? "Creating account..."
+                    : "Signing in..."
+                  : authMode === "signup"
+                    ? "Create coach account"
+                    : "Sign in"}
+              </button>
+            </div>
+
+            <section className={styles.localPanel}>
+              <label className={styles.localLabel} htmlFor="backend-url-login">
+                Local backend URL
+              </label>
+              <input
+                id="backend-url-login"
+                className={styles.textInput}
+                value={backendUrl}
+                onChange={(event) => setBackendUrl(event.target.value)}
+                placeholder="Backend URL"
+              />
+            </section>
+          </section>
+        </section>
+      </main>
+    );
+  }
+
   return (
     <main className={styles.page}>
       <header className={styles.topbar}>
         <div className={styles.topbarInner}>
-          <div className={styles.brand}>
-            <div className={styles.brandMark}>
-              <Image
-                src="/bravo_head.png"
-                alt="BravoBall mascot"
-                width={1080}
-                height={1080}
-                priority
-                className={styles.brandMarkImage}
-              />
+          <div className={styles.brandRow}>
+            <button
+              type="button"
+              className={styles.mobileMenuButton}
+              aria-label={isMobileSidebarOpen ? "Close navigation" : "Open navigation"}
+              aria-expanded={isMobileSidebarOpen}
+              onClick={() => setIsMobileSidebarOpen((current) => !current)}
+            >
+              <span />
+              <span />
+              <span />
+            </button>
+
+            <div className={styles.brand}>
+              <div className={styles.brandMark}>
+                <Image
+                  src="/bravo_head.png"
+                  alt="BravoBall mascot"
+                  width={1080}
+                  height={1080}
+                  priority
+                  className={styles.brandMarkImage}
+                />
+              </div>
+              <div className={styles.brandStack}>
+                <span className={styles.brandText}>BravoBall</span>
+                <span className={styles.brandSubtext}>Coach MVP</span>
+              </div>
             </div>
-            <span className={styles.brandText}>BravoBall</span>
           </div>
 
           <div className={styles.topbarActions}>
@@ -491,13 +1209,33 @@ export default function Home() {
                 </svg>
               </button>
             </div>
-            <button className={styles.signOutButton}>Sign out</button>
+
+            <div className={styles.sessionPill}>
+              <span className={styles.sessionName}>{coachDisplayName(coachSession, coachProfile)}</span>
+              <span className={styles.sessionMeta}>{coachProfile?.email || coachSession?.email}</span>
+            </div>
+
+            <button className={styles.signOutButton} onClick={signOutCoach}>
+              Sign out
+            </button>
           </div>
         </div>
       </header>
 
       <div className={styles.shell}>
-        <aside className={styles.sidebar}>
+        {isMobileSidebarOpen ? (
+          <button
+            type="button"
+            className={styles.sidebarScrim}
+            aria-label="Close navigation"
+            onClick={() => setIsMobileSidebarOpen(false)}
+          />
+        ) : null}
+
+        <aside
+          className={`${styles.sidebar} ${isMobileSidebarOpen ? styles.sidebarOpen : ""}`}
+          aria-hidden={!isMobileSidebarOpen}
+        >
           {sidebarGroups.map((group) => (
             <div key={group.title} className={styles.sidebarGroup}>
               <p className={styles.sidebarLabel}>{group.title}</p>
@@ -508,18 +1246,24 @@ export default function Home() {
                     className={`${styles.sidebarItem} ${
                       (item === "Teams" && activeView === "teams") ||
                       (item === "Players" && activeView === "players") ||
-                      (item === "Dashboard" && activeView === "dashboard")
+                      (item === "Dashboard" && activeView === "dashboard") ||
+                      (item === "Settings" && activeView === "settings")
                         ? styles.sidebarItemActive
                         : ""
                     }`}
                     onClick={() =>
-                      setActiveView(
-                        item === "Teams"
-                          ? "teams"
-                          : item === "Players"
-                            ? "players"
-                            : "dashboard",
-                      )
+                      {
+                        setActiveView(
+                          item === "Teams"
+                            ? "teams"
+                            : item === "Players"
+                              ? "players"
+                              : item === "Dashboard"
+                                ? "dashboard"
+                                : "settings",
+                        );
+                        setIsMobileSidebarOpen(false);
+                      }
                     }
                   >
                     {item}
@@ -533,326 +1277,494 @@ export default function Home() {
         <section className={styles.content}>
           <div className={styles.contentHeader}>
             <div>
-              <p className={styles.eyebrow}>Coach MVP</p>
+              <p className={styles.eyebrow}>Coach Workspace</p>
               <h1 className={styles.title}>
                 {pageTitleForView(activeView)}
                 {activeView === "teams" ? ` (${teams.length})` : ""}
               </h1>
             </div>
-            <div className={styles.headerButtons}>
-              <select
-                className={styles.selectInput}
-                value={timeFilter}
-                onChange={(event) => setTimeFilter(event.target.value as TimeFilter)}
-              >
-                {timeFilterOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-              <button className={styles.secondaryButton} onClick={() => setIsAddPlayerModalOpen(true)}>
-                Add player
-              </button>
-              <button className={styles.primaryButton} onClick={() => setIsCreateModalOpen(true)}>
-                Create team
-              </button>
-            </div>
-          </div>
-
-          {error ? <Banner tone="error" text={error} /> : null}
-          {notice ? <Banner tone="success" text={notice} /> : null}
-
-          {activeView === "teams" ? (
-          <section className={styles.panel}>
-            <div className={styles.panelHeader}>
-              <div>
-                <h2 className={styles.panelTitle}>Overview</h2>
-                <p className={styles.panelText}>Filtered team activity updates automatically when the date range changes.</p>
-              </div>
-            </div>
-
-            <div className={styles.tableWrap}>
-              <table className={styles.table}>
-                <thead>
-                  <tr>
-                    <th>Team</th>
-                    <th>Registration</th>
-                    <th>Avg Time/Player</th>
-                    <th>{trainedLabelForFilter(timeFilter)}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {teams.length === 0 ? (
-                    <tr>
-                      <td colSpan={4} className={styles.emptyCell}>
-                        {isLoading ? "Loading..." : "No teams loaded yet."}
-                      </td>
-                    </tr>
-                  ) : (
-                    teams.map((team) => (
-                      <tr
-                        key={team.id}
-                        className={team.id === selectedTeamId ? styles.selectedRow : ""}
-                        onClick={() => setSelectedTeamId(team.id)}
-                      >
-                        <td>
-                          <div className={styles.teamCell}>
-                            <span className={styles.teamName}>{team.name}</span>
-                            <span className={styles.teamMeta}>Join code {team.join_code}</span>
-                          </div>
-                        </td>
-                        <td>{team.player_count}</td>
-                        <td>{formatMinutes(team.avg_time_per_player_minutes)}</td>
-                        <td>{formatMinutes(team.trained_minutes_in_range)}</td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </section>
-          ) : null}
-
-          {activeView === "teams" ? (
-          <div className={styles.lowerGrid}>
-            <section className={styles.panel}>
-              <h2 className={styles.panelTitle}>Selected team</h2>
-              <p className={styles.teamTitle}>{selectedTeam ? selectedTeam.name : "No team selected"}</p>
-              <div className={styles.joinCodeCard}>
-                <span className={styles.joinCodeLabel}>Join Code</span>
-                <span className={styles.joinCodeValue}>{selectedTeam?.join_code ?? "--"}</span>
-              </div>
-              <div className={styles.quickStats}>
-                <div className={styles.quickStat}>
-                  <span className={styles.quickStatLabel}>Players</span>
-                  <strong>{selectedTeam?.player_count ?? 0}</strong>
-                </div>
-                <div className={styles.quickStat}>
-                  <span className={styles.quickStatLabel}>Sessions</span>
-                  <strong>{selectedTeam?.sessions_in_range ?? 0}</strong>
-                </div>
-              </div>
-            </section>
-          </div>
-          ) : null}
-
-          {activeView === "players" ? (
-          <section className={styles.panel}>
-            <div className={styles.panelHeader}>
-              <div>
-                <h2 className={styles.panelTitle}>Overview</h2>
-                <p className={styles.panelText}>Select a team to view player stats and roster details.</p>
-              </div>
-              <div className={styles.inlineControls}>
+            {activeView !== "settings" ? (
+              <div className={styles.headerButtons}>
                 <select
                   className={styles.selectInput}
-                  value={selectedTeamId ?? ""}
-                  onChange={(event) => setSelectedTeamId(event.target.value ? Number(event.target.value) : null)}
+                  value={timeFilter}
+                  onChange={(event) => setTimeFilter(event.target.value as TimeFilter)}
                 >
-                  <option value="">Select team</option>
-                  {teams.map((team) => (
-                    <option key={team.id} value={team.id}>
-                      {team.name}
+                  {timeFilterOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
                     </option>
                   ))}
                 </select>
                 <button className={styles.secondaryButton} onClick={() => setIsAddPlayerModalOpen(true)}>
                   Add player
                 </button>
+                <button className={styles.primaryButton} onClick={() => setIsCreateModalOpen(true)}>
+                  Create team
+                </button>
               </div>
-            </div>
+            ) : null}
+          </div>
 
-            <div className={styles.tableWrap}>
-              <table className={styles.table}>
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th>Trained</th>
-                    <th>
-                      <span className={styles.headerHint}>
-                        Technical
-                        <span className={styles.infoBadge} aria-hidden="true">i</span>
-                        <span className={styles.headerTooltip} role="tooltip">
-                          {skillInfo.technical}
-                        </span>
-                      </span>
-                    </th>
-                    <th>
-                      <span className={styles.headerHint}>
-                        Physical
-                        <span className={styles.infoBadge} aria-hidden="true">i</span>
-                        <span className={styles.headerTooltip} role="tooltip">
-                          {skillInfo.physical}
-                        </span>
-                      </span>
-                    </th>
-                    <th>Mental</th>
-                    <th>Streak</th>
-                    <th>Best</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {!selectedTeamId ? (
+          {error ? <Banner tone="error" text={error} /> : null}
+          {notice ? <Banner tone="success" text={notice} /> : null}
+
+          {activeView === "teams" ? (
+            <section className={styles.panel}>
+              <div className={styles.panelHeader}>
+                <div>
+                  <h2 className={styles.panelTitle}>Overview</h2>
+                  <p className={styles.panelText}>
+                    Filtered team activity updates automatically when the date range changes.
+                  </p>
+                </div>
+              </div>
+
+              <div className={styles.tableWrap}>
+                <table className={styles.table}>
+                  <thead>
                     <tr>
-                      <td colSpan={7} className={styles.emptyCell}>
-                        No team selected.
-                      </td>
+                      <th>Team</th>
+                      <th>Registration</th>
+                      <th>Avg Time/Player</th>
+                      <th>{trainedLabelForFilter(timeFilter)}</th>
                     </tr>
-                  ) : roster?.members.length ? (
-                    roster.members.map((member) => (
-                      <tr
-                        key={member.user_id}
-                        className={styles.clickableRow}
-                        onClick={() => {
-                          if (!selectedTeamId) return;
-                          setIsPlayerDetailOpen(true);
-                          void loadPlayerHistory(selectedTeamId, member.user_id);
-                        }}
-                      >
-                        <td>
-                          <div className={styles.teamCell}>
-                            <span className={styles.teamName}>
-                              {member.full_name || member.username || `user-${member.user_id}`}
-                            </span>
-                            <span className={styles.teamMeta}>{member.email || member.username}</span>
-                          </div>
+                  </thead>
+                  <tbody>
+                    {teams.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className={styles.emptyCell}>
+                          {isLoading ? "Loading..." : "No teams loaded yet."}
                         </td>
-                        <td>{formatMinutes(member.total_trained_minutes)}</td>
-                        <td>{formatMinutes(member.technical_minutes)}</td>
-                        <td>{formatMinutes(member.physical_minutes)}</td>
-                        <td>{formatMinutes(member.mental_minutes)}</td>
-                        <td>{member.current_streak}d</td>
-                        <td>{member.best_streak}d</td>
                       </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan={7} className={styles.emptyCell}>
-                        No members yet.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </section>
+                    ) : (
+                      teams.map((team) => (
+                        <tr
+                          key={team.id}
+                          className={`${team.id === selectedTeamId ? styles.selectedRow : ""} ${styles.clickableRow}`}
+                          onClick={() => {
+                            setSelectedTeamId(team.id);
+                            setActiveView("players");
+                          }}
+                        >
+                          <td>
+                            <div className={styles.teamCell}>
+                              <span className={styles.teamName}>{team.name}</span>
+                              <span className={styles.teamMeta}>Join code {team.join_code}</span>
+                            </div>
+                          </td>
+                          <td>{team.player_count}</td>
+                          <td>{formatMinutes(team.avg_time_per_player_minutes)}</td>
+                          <td>{formatMinutes(team.trained_minutes_in_range)}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </section>
           ) : null}
 
-          {activeView === "dashboard" ? (
-          <section className={styles.panel}>
-            <div className={styles.panelHeader}>
-              <div>
-                <h2 className={styles.panelTitle}>Overview</h2>
-                <p className={styles.panelText}>Team-level activity for the selected date range.</p>
-              </div>
-              <div className={styles.inlineControls}>
-                <select
-                  className={styles.selectInput}
-                  value={selectedTeamId ?? ""}
-                  onChange={(event) => {
-                    const nextTeamId = event.target.value ? Number(event.target.value) : null;
-                    setSelectedTeamId(nextTeamId);
-                    if (nextTeamId) {
-                      void loadDashboard(nextTeamId);
-                    } else {
-                      setDashboard(null);
-                    }
-                  }}
-                >
-                  <option value="">Select team</option>
-                  {teams.map((team) => (
-                    <option key={team.id} value={team.id}>
-                      {team.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div className={styles.dashboardCards}>
-              <div className={styles.quickStat}>
-                <span className={styles.quickStatLabel}>Active Players</span>
-                <strong>
-                  {dashboard ? `${dashboard.active_players} / ${dashboard.total_players}` : "--"}
-                </strong>
-              </div>
-              <div className={styles.quickStat}>
-                <span className={styles.quickStatLabel}>Total Time Logged</span>
-                <strong>{dashboard ? formatMinutes(dashboard.total_training_minutes) : "--"}</strong>
-              </div>
-            </div>
-
-            <div className={styles.dashboardGrid}>
-              <section className={styles.dashboardPanel}>
-                <div className={styles.panelHeader}>
-                  <h3 className={styles.panelTitle}>Top Training Players</h3>
+          {activeView === "teams" ? (
+            <div className={styles.lowerGrid}>
+              <section className={styles.panel}>
+                <h2 className={styles.panelTitle}>Selected team</h2>
+                <p className={styles.teamTitle}>{selectedTeam ? selectedTeam.name : "No team selected"}</p>
+                <div className={styles.joinCodeCard}>
+                  <span className={styles.joinCodeLabel}>Join Code</span>
+                  <span className={styles.joinCodeValue}>{selectedTeam?.join_code ?? "--"}</span>
                 </div>
-                <div className={styles.topPlayersList}>
-                  {dashboard?.top_players.length ? (
-                    dashboard.top_players.map((player) => {
-                      const maxMinutes = dashboard.top_players[0]?.total_minutes || 1;
-                      const width = `${Math.max((player.total_minutes / maxMinutes) * 100, 4)}%`;
-                      return (
-                        <div key={player.user_id} className={styles.topPlayerRow}>
-                          <div className={styles.topPlayerHeader}>
-                            <span className={styles.teamName}>
-                              {player.full_name || player.username || `user-${player.user_id}`}
-                            </span>
-                            <span>{formatMinutes(player.total_minutes)}</span>
-                          </div>
-                          <div className={styles.topPlayerBarTrack}>
-                            <div className={styles.topPlayerBarFill} style={{ width }} />
-                          </div>
-                        </div>
-                      );
-                    })
-                  ) : (
-                    <p className={styles.panelText}>No training data for this range yet.</p>
-                  )}
+                <div className={styles.quickStats}>
+                  <div className={styles.quickStat}>
+                    <span className={styles.quickStatLabel}>Players</span>
+                    <strong>{selectedTeam?.player_count ?? 0}</strong>
+                  </div>
+                  <div className={styles.quickStat}>
+                    <span className={styles.quickStatLabel}>Sessions</span>
+                    <strong>{selectedTeam?.sessions_in_range ?? 0}</strong>
+                  </div>
+                </div>
+                <div className={styles.inlineControls}>
+                  <button
+                    className={styles.secondaryButton}
+                    onClick={() => setActiveView("players")}
+                    disabled={!selectedTeamId}
+                  >
+                    Manage players
+                  </button>
+                  <button
+                    className={styles.dangerButton}
+                    onClick={() => void deleteSelectedTeam()}
+                    disabled={!selectedTeamId || isLoading}
+                  >
+                    Delete team
+                  </button>
                 </div>
               </section>
 
-              <section className={styles.dashboardPanel}>
-                <div className={styles.panelHeader}>
-                  <h3 className={styles.panelTitle}>Training Breakdown</h3>
-                </div>
-                <div className={styles.breakdownWrap}>
-                  <div className={styles.pieChart} style={{ background: dashboardChart.background }} />
-                  <div className={styles.breakdownLegend}>
-                    {dashboardChart.items.length ? (
-                      dashboardChart.items.map((item) => (
-                        <div key={item.category} className={styles.legendRow}>
-                          <span className={styles.legendSwatch} style={{ background: item.color }} />
-                          <span>{item.label}</span>
-                          <span>{formatMinutes(item.minutes)}</span>
-                        </div>
-                      ))
-                    ) : (
-                      <p className={styles.panelText}>No category data for this range yet.</p>
-                    )}
+              <section className={styles.panel}>
+                <h2 className={styles.panelTitle}>Coach account</h2>
+                <p className={styles.panelText}>
+                  Signed in as {coachDisplayName(coachSession, coachProfile)}.
+                </p>
+                <div className={styles.quickStats}>
+                  <div className={styles.quickStat}>
+                    <span className={styles.quickStatLabel}>Username</span>
+                    <strong>{coachProfile?.username || coachSession?.username}</strong>
+                  </div>
+                  <div className={styles.quickStat}>
+                    <span className={styles.quickStatLabel}>Role</span>
+                    <strong>{coachProfile?.role || coachSession?.role || "coach"}</strong>
                   </div>
                 </div>
               </section>
             </div>
+          ) : null}
 
-            {!selectedTeamId ? (
-              <p className={styles.panelText}>Select a team to view dashboard data.</p>
-            ) : null}
-            {selectedTeamId && !dashboard ? (
-              <button
-                className={styles.secondaryButton}
-                onClick={() => void loadDashboard(selectedTeamId)}
-              >
-                Load dashboard
-              </button>
-            ) : null}
-            {selectedTeamId && dashboard && dashboard.team_name ? (
-              <div className={styles.dashboardFooter}>
-                <span className={styles.teamMeta}>Viewing {dashboard.team_name}</span>
+          {activeView === "players" ? (
+            <section className={styles.panel}>
+              <div className={styles.panelHeader}>
+                <div>
+                  <h2 className={styles.panelTitle}>Overview</h2>
+                  <p className={styles.panelText}>Select a team to view player stats and roster details.</p>
+                </div>
+                <div className={styles.inlineControls}>
+                  <select
+                    className={styles.selectInput}
+                    value={selectedTeamId ?? ""}
+                    onChange={(event) =>
+                      setSelectedTeamId(event.target.value ? Number(event.target.value) : null)
+                    }
+                  >
+                    <option value="">Select team</option>
+                    {teams.map((team) => (
+                      <option key={team.id} value={team.id}>
+                        {team.name}
+                      </option>
+                    ))}
+                  </select>
+                  <button className={styles.secondaryButton} onClick={() => setIsAddPlayerModalOpen(true)}>
+                    Add player
+                  </button>
+                </div>
               </div>
-            ) : null}
-          </section>
+
+              <div className={styles.tableWrap}>
+                <table className={styles.table}>
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Trained</th>
+                      <th>
+                        <span className={styles.headerHint}>
+                          Technical
+                          <span className={styles.infoBadge} aria-hidden="true">
+                            i
+                          </span>
+                          <span className={styles.headerTooltip} role="tooltip">
+                            {skillInfo.technical}
+                          </span>
+                        </span>
+                      </th>
+                      <th>
+                        <span className={styles.headerHint}>
+                          Physical
+                          <span className={styles.infoBadge} aria-hidden="true">
+                            i
+                          </span>
+                          <span className={styles.headerTooltip} role="tooltip">
+                            {skillInfo.physical}
+                          </span>
+                        </span>
+                      </th>
+                      <th>Mental</th>
+                      <th>Streak</th>
+                      <th>Best</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {!selectedTeamId ? (
+                      <tr>
+                        <td colSpan={8} className={styles.emptyCell}>
+                          No team selected.
+                        </td>
+                      </tr>
+                    ) : roster?.members.length ? (
+                      roster.members.map((member) => (
+                        <tr
+                          key={member.user_id}
+                          className={styles.clickableRow}
+                          onClick={() => {
+                            if (!selectedTeamId) {
+                              return;
+                            }
+                            setIsPlayerDetailOpen(true);
+                            void loadPlayerHistory(selectedTeamId, member.user_id);
+                          }}
+                        >
+                          <td>
+                            <div className={styles.teamCell}>
+                              <span className={styles.teamName}>
+                                {member.full_name || member.username || `user-${member.user_id}`}
+                              </span>
+                              <span className={styles.teamMeta}>{member.email || member.username}</span>
+                            </div>
+                          </td>
+                          <td>{formatMinutes(member.total_trained_minutes)}</td>
+                          <td>{formatMinutes(member.technical_minutes)}</td>
+                          <td>{formatMinutes(member.physical_minutes)}</td>
+                          <td>{formatMinutes(member.mental_minutes)}</td>
+                          <td>{member.current_streak}d</td>
+                          <td>{member.best_streak}d</td>
+                          <td>
+                            <button
+                              className={styles.tableDangerButton}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void removePlayerFromTeam(member.user_id);
+                              }}
+                              disabled={isLoading}
+                            >
+                              Remove
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={8} className={styles.emptyCell}>
+                          No members yet.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          ) : null}
+
+          {activeView === "dashboard" ? (
+            <section className={styles.panel}>
+              <div className={styles.panelHeader}>
+                <div>
+                  <h2 className={styles.panelTitle}>Overview</h2>
+                  <p className={styles.panelText}>Team-level activity for the selected date range.</p>
+                </div>
+                <div className={styles.inlineControls}>
+                  <select
+                    className={styles.selectInput}
+                    value={selectedTeamId ?? ""}
+                    onChange={(event) => {
+                      const nextTeamId = event.target.value ? Number(event.target.value) : null;
+                      setSelectedTeamId(nextTeamId);
+                      if (nextTeamId) {
+                        void loadDashboard(nextTeamId);
+                      } else {
+                        setDashboard(null);
+                      }
+                    }}
+                  >
+                    <option value="">Select team</option>
+                    {teams.map((team) => (
+                      <option key={team.id} value={team.id}>
+                        {team.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className={styles.dashboardCards}>
+                <div className={styles.quickStat}>
+                  <span className={styles.quickStatLabel}>Active Players</span>
+                  <strong>
+                    {dashboard ? `${dashboard.active_players} / ${dashboard.total_players}` : "--"}
+                  </strong>
+                </div>
+                <div className={styles.quickStat}>
+                  <span className={styles.quickStatLabel}>Total Time Logged</span>
+                  <strong>{dashboard ? formatMinutes(dashboard.total_training_minutes) : "--"}</strong>
+                </div>
+              </div>
+
+              <div className={styles.dashboardGrid}>
+                <section className={styles.dashboardPanel}>
+                  <div className={styles.panelHeader}>
+                    <h3 className={styles.panelTitle}>Top Training Players</h3>
+                  </div>
+                  <div className={styles.topPlayersList}>
+                    {dashboard?.top_players.length ? (
+                      dashboard.top_players.map((player) => {
+                        const maxMinutes = dashboard.top_players[0]?.total_minutes || 1;
+                        const width = `${Math.max((player.total_minutes / maxMinutes) * 100, 4)}%`;
+                        return (
+                          <div key={player.user_id} className={styles.topPlayerRow}>
+                            <div className={styles.topPlayerHeader}>
+                              <span className={styles.teamName}>
+                                {player.full_name || player.username || `user-${player.user_id}`}
+                              </span>
+                              <span>{formatMinutes(player.total_minutes)}</span>
+                            </div>
+                            <div className={styles.topPlayerBarTrack}>
+                              <div className={styles.topPlayerBarFill} style={{ width }} />
+                            </div>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <p className={styles.panelText}>No training data for this range yet.</p>
+                    )}
+                  </div>
+                </section>
+
+                <section className={styles.dashboardPanel}>
+                  <div className={styles.panelHeader}>
+                    <h3 className={styles.panelTitle}>Training Breakdown</h3>
+                  </div>
+                  <div className={styles.breakdownWrap}>
+                    <div className={styles.pieChart} style={{ background: dashboardChart.background }} />
+                    <div className={styles.breakdownLegend}>
+                      {dashboardChart.items.length ? (
+                        dashboardChart.items.map((item) => (
+                          <div key={item.category} className={styles.legendRow}>
+                            <span className={styles.legendSwatch} style={{ background: item.color }} />
+                            <span>{item.label}</span>
+                            <span>{formatMinutes(item.minutes)}</span>
+                          </div>
+                        ))
+                      ) : (
+                        <p className={styles.panelText}>No category data for this range yet.</p>
+                      )}
+                    </div>
+                  </div>
+                </section>
+              </div>
+
+              {!selectedTeamId ? (
+                <p className={styles.panelText}>Select a team to view dashboard data.</p>
+              ) : null}
+              {selectedTeamId && !dashboard ? (
+                <button
+                  className={styles.secondaryButton}
+                  onClick={() => void loadDashboard(selectedTeamId)}
+                >
+                  Load dashboard
+                </button>
+              ) : null}
+              {selectedTeamId && dashboard && dashboard.team_name ? (
+                <div className={styles.dashboardFooter}>
+                  <span className={styles.teamMeta}>Viewing {dashboard.team_name}</span>
+                </div>
+              ) : null}
+            </section>
+          ) : null}
+
+          {activeView === "settings" ? (
+            <div className={styles.lowerGrid}>
+              <section className={styles.panel}>
+                <h2 className={styles.panelTitle}>Coach profile</h2>
+                <p className={styles.panelText}>Update your account information used across coach features.</p>
+                <div className={styles.formStack}>
+                  <div className={styles.authNameRow}>
+                    <label className={styles.fieldLabel}>
+                      <span>First name</span>
+                      <input
+                        className={styles.textInput}
+                        value={settingsForm.firstName}
+                        onChange={(event) =>
+                          setSettingsForm((current) => ({ ...current, firstName: event.target.value }))
+                        }
+                      />
+                    </label>
+                    <label className={styles.fieldLabel}>
+                      <span>Last name</span>
+                      <input
+                        className={styles.textInput}
+                        value={settingsForm.lastName}
+                        onChange={(event) =>
+                          setSettingsForm((current) => ({ ...current, lastName: event.target.value }))
+                        }
+                      />
+                    </label>
+                  </div>
+                  <label className={styles.fieldLabel}>
+                    <span>Username</span>
+                    <input
+                      className={styles.textInput}
+                      value={settingsForm.username}
+                      onChange={(event) =>
+                        setSettingsForm((current) => ({ ...current, username: event.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className={styles.fieldLabel}>
+                    <span>Email</span>
+                    <input
+                      className={styles.textInput}
+                      value={settingsForm.email}
+                      onChange={(event) =>
+                        setSettingsForm((current) => ({ ...current, email: event.target.value }))
+                      }
+                    />
+                  </label>
+                  <div className={styles.modalActions}>
+                    <button className={styles.primaryButton} onClick={() => void saveCoachSettings()} disabled={isLoading}>
+                      Save profile
+                    </button>
+                  </div>
+                </div>
+              </section>
+
+              <section className={styles.panel}>
+                <h2 className={styles.panelTitle}>Change password</h2>
+                <p className={styles.panelText}>Use your current password to set a new one.</p>
+                <div className={styles.formStack}>
+                  <label className={styles.fieldLabel}>
+                    <span>Current password</span>
+                    <input
+                      type="password"
+                      className={styles.textInput}
+                      value={passwordForm.currentPassword}
+                      onChange={(event) =>
+                        setPasswordForm((current) => ({ ...current, currentPassword: event.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className={styles.fieldLabel}>
+                    <span>New password</span>
+                    <input
+                      type="password"
+                      className={styles.textInput}
+                      value={passwordForm.newPassword}
+                      onChange={(event) =>
+                        setPasswordForm((current) => ({ ...current, newPassword: event.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className={styles.fieldLabel}>
+                    <span>Confirm new password</span>
+                    <input
+                      type="password"
+                      className={styles.textInput}
+                      value={passwordForm.confirmPassword}
+                      onChange={(event) =>
+                        setPasswordForm((current) => ({ ...current, confirmPassword: event.target.value }))
+                      }
+                    />
+                  </label>
+                  <div className={styles.modalActions}>
+                    <button
+                      className={styles.secondaryButton}
+                      onClick={() => void changeCoachPassword()}
+                      disabled={isLoading}
+                    >
+                      Update password
+                    </button>
+                  </div>
+                </div>
+              </section>
+            </div>
           ) : null}
 
           <section className={styles.localPanel}>
@@ -921,7 +1833,9 @@ export default function Home() {
                   <select
                     className={styles.selectInput}
                     value={selectedTeamId ?? ""}
-                    onChange={(event) => setSelectedTeamId(event.target.value ? Number(event.target.value) : null)}
+                    onChange={(event) =>
+                      setSelectedTeamId(event.target.value ? Number(event.target.value) : null)
+                    }
                   >
                     <option value="">Choose a team</option>
                     {teams.map((team) => (
@@ -1031,6 +1945,31 @@ export default function Home() {
         </section>
       </div>
     </main>
+  );
+}
+
+function AuthTopbar() {
+  return (
+    <header className={styles.authTopbar}>
+      <div className={styles.authTopbarInner}>
+        <div className={styles.brand}>
+          <div className={styles.brandMark}>
+            <Image
+              src="/bravo_head.png"
+              alt="BravoBall mascot"
+              width={1080}
+              height={1080}
+              priority
+              className={styles.brandMarkImage}
+            />
+          </div>
+          <div className={styles.brandStack}>
+            <span className={styles.brandText}>BravoBall</span>
+            <span className={styles.brandSubtext}>Coach</span>
+          </div>
+        </div>
+      </div>
+    </header>
   );
 }
 

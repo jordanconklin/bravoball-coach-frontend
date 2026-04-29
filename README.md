@@ -33,11 +33,16 @@ Implemented:
 
 Not finished yet:
 
-- real coach sign-in / sign-out
-- protected coach session shell
 - mobile player join-code flow
 - multi-manager support
 - coach-specific backend role model hardening
+
+Implemented in this branch:
+
+- real coach sign-up, sign-in, and sign-out
+- protected coach session shell
+- coach auth persistence with refresh-token retry
+- coach accounts stored in the main BravoBall `users` table using the `role` flag
 
 ## Backend Contract
 
@@ -108,7 +113,7 @@ docker run -d \
 
 - Styling follows the BravoBall landing page direction
 - Uses BravoBall mascot/logo assets
-- Includes the `Bravo_Panting.riv` asset for future auth/onboarding UI work
+- Uses the `Bravo_Panting.riv` asset on the coach login page
 
 ## Project Notes
 
