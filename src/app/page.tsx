@@ -134,7 +134,7 @@ type StoredConfig = {
 
 const STORAGE_KEY = "bravoball-coach-checkpoint-1";
 const DEFAULT_TIME_FILTER: TimeFilter = "current_week";
-const DEFAULT_BACKEND_URL = "http://localhost:8000";
+const DEFAULT_BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:8000";
 
 const timeFilterOptions: { value: TimeFilter; label: string }[] = [
   { value: "current_week", label: "Current Week" },
