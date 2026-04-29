@@ -141,6 +141,7 @@ const dashboardCategoryLabels: Record<string, string> = {
   defending: "Defending",
   goalkeeping: "Goalkeeping",
   fitness: "Fitness",
+  mental_training: "Mental Training",
 };
 
 const dashboardCategoryColors: Record<string, string> = {
@@ -151,6 +152,7 @@ const dashboardCategoryColors: Record<string, string> = {
   defending: "#D69B54",
   goalkeeping: "#BFC7D6",
   fitness: "#68A97B",
+  mental_training: "#D96FA8",
 };
 
 const sidebarGroups = [
@@ -646,6 +648,18 @@ export default function Home() {
       items: slices,
     };
   }, [dashboard]);
+
+  const playerHistorySummary = useMemo(() => {
+    const sessions = playerHistory?.sessions ?? [];
+    return sessions.reduce(
+      (totals, session) => ({
+        sessions: totals.sessions + 1,
+        totalMinutes: totals.totalMinutes + session.total_minutes,
+        mentalMinutes: totals.mentalMinutes + session.mental_minutes,
+      }),
+      { sessions: 0, totalMinutes: 0, mentalMinutes: 0 },
+    );
+  }, [playerHistory]);
 
   async function loadTeams() {
     const nextTeams = await api<TeamSummary[]>(
@@ -1288,7 +1302,7 @@ export default function Home() {
 
           {activeView === "teams" ? (
             <div className={styles.lowerGrid}>
-              <section className={styles.panel}>
+              <section className={`${styles.panel} ${styles.selectedTeamPanel}`}>
                 <h2 className={styles.panelTitle}>Selected team</h2>
                 <p className={styles.teamTitle}>{selectedTeam ? selectedTeam.name : "No team selected"}</p>
                 <div className={styles.joinCodeCard}>
@@ -1305,7 +1319,7 @@ export default function Home() {
                     <strong>{selectedTeam?.sessions_in_range ?? 0}</strong>
                   </div>
                 </div>
-                <div className={styles.inlineControls}>
+                <div className={`${styles.inlineControls} ${styles.teamActions}`}>
                   <button
                     className={styles.secondaryButton}
                     onClick={() => setActiveView("players")}
@@ -1845,53 +1859,70 @@ export default function Home() {
                   </button>
                 </div>
 
-                <div className={styles.detailStats}>
-                  <div className={styles.quickStat}>
-                    <span className={styles.quickStatLabel}>Sessions</span>
-                    <strong>{playerHistory?.sessions.length ?? 0}</strong>
-                  </div>
-                  <div className={styles.quickStat}>
-                    <span className={styles.quickStatLabel}>Range</span>
-                    <strong>{timeFilterOptions.find((option) => option.value === timeFilter)?.label}</strong>
-                  </div>
-                </div>
-
-                <div className={styles.detailSessionList}>
-                  {playerHistory?.sessions.length ? (
-                    playerHistory.sessions.map((session) => (
-                      <div key={session.session_id} className={styles.detailSessionCard}>
-                        <div className={styles.detailSessionHeader}>
-                          <div>
-                            <strong>{new Date(session.date).toLocaleString()}</strong>
-                            <p className={styles.teamMeta}>{session.session_type.replace("_", " ")}</p>
-                          </div>
-                          <strong>{formatMinutes(session.total_minutes)}</strong>
-                        </div>
-                        <div className={styles.detailBreakdown}>
-                          <span>Technical {formatMinutes(session.technical_minutes)}</span>
-                          <span>Physical {formatMinutes(session.physical_minutes)}</span>
-                          <span>Mental {formatMinutes(session.mental_minutes)}</span>
-                        </div>
-                        <div className={styles.drillList}>
-                          {session.drills.length ? (
-                            session.drills.map((drill, index) => (
-                              <div key={`${session.session_id}-${index}`} className={styles.drillItem}>
-                                <span className={styles.teamName}>{drill.title}</span>
-                                <span className={styles.teamMeta}>
-                                  {[drill.skill, ...drill.sub_skills].filter(Boolean).join(" • ")}
-                                  {drill.duration_minutes ? ` • ${formatMinutes(drill.duration_minutes)}` : ""}
-                                </span>
-                              </div>
-                            ))
-                          ) : (
-                            <p className={styles.teamMeta}>No drill breakdown saved for this session.</p>
-                          )}
-                        </div>
+                <div className={styles.detailModalBody}>
+                  <section className={styles.detailSection}>
+                    <div className={styles.detailStats}>
+                      <div className={styles.quickStat}>
+                        <span className={styles.quickStatLabel}>Sessions</span>
+                        <strong>{playerHistorySummary.sessions}</strong>
                       </div>
-                    ))
-                  ) : (
-                    <p className={styles.panelText}>No sessions found for this player in the selected date range.</p>
-                  )}
+                      <div className={styles.quickStat}>
+                        <span className={styles.quickStatLabel}>Total Trained</span>
+                        <strong>{formatMinutes(playerHistorySummary.totalMinutes)}</strong>
+                      </div>
+                      <div className={styles.quickStat}>
+                        <span className={styles.quickStatLabel}>Mental</span>
+                        <strong>{formatMinutes(playerHistorySummary.mentalMinutes)}</strong>
+                      </div>
+                      <div className={styles.quickStat}>
+                        <span className={styles.quickStatLabel}>Range</span>
+                        <strong>{timeFilterOptions.find((option) => option.value === timeFilter)?.label}</strong>
+                      </div>
+                    </div>
+                  </section>
+
+                  <section className={styles.detailSection}>
+                    <div className={styles.detailSectionHeader}>
+                      <h4 className={styles.panelTitle}>Session history</h4>
+                    </div>
+                    <div className={styles.detailSessionList}>
+                      {playerHistory?.sessions.length ? (
+                        playerHistory.sessions.map((session) => (
+                          <div key={session.session_id} className={styles.detailSessionCard}>
+                            <div className={styles.detailSessionHeader}>
+                              <div>
+                                <strong>{new Date(session.date).toLocaleString()}</strong>
+                                <p className={styles.teamMeta}>{session.session_type.replace("_", " ")}</p>
+                              </div>
+                              <strong>{formatMinutes(session.total_minutes)}</strong>
+                            </div>
+                            <div className={styles.detailBreakdown}>
+                              <span>Technical {formatMinutes(session.technical_minutes)}</span>
+                              <span>Physical {formatMinutes(session.physical_minutes)}</span>
+                              <span>Mental {formatMinutes(session.mental_minutes)}</span>
+                            </div>
+                            <div className={styles.drillList}>
+                              {session.drills.length ? (
+                                session.drills.map((drill, index) => (
+                                  <div key={`${session.session_id}-${index}`} className={styles.drillItem}>
+                                    <span className={styles.teamName}>{drill.title}</span>
+                                    <span className={styles.teamMeta}>
+                                      {[drill.skill, ...drill.sub_skills].filter(Boolean).join(" • ")}
+                                      {drill.duration_minutes ? ` • ${formatMinutes(drill.duration_minutes)}` : ""}
+                                    </span>
+                                  </div>
+                                ))
+                              ) : (
+                                <p className={styles.teamMeta}>No drill breakdown saved for this session.</p>
+                              )}
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <p className={styles.panelText}>No sessions found for this player in the selected date range.</p>
+                      )}
+                    </div>
+                  </section>
                 </div>
               </div>
             </div>

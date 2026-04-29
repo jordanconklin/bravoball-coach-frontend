@@ -400,6 +400,12 @@
   font-weight: 700;
 }
 
+.selectedTeamPanel {
+  display: grid;
+  gap: 18px;
+  align-content: start;
+}
+
 .lowerGrid {
   display: grid;
   gap: 24px;
@@ -408,8 +414,7 @@
 
 .joinCodeCard {
   display: grid;
-  gap: 6px;
-  margin: 18px 0;
+  gap: 8px;
   padding: 18px;
   background: linear-gradient(135deg, #fff7e2 0%, #fffdf5 100%);
   border: 1px solid #f0dc9d;
@@ -439,7 +444,12 @@
 }
 
 .quickStats {
-  margin-top: 16px;
+  margin-top: 4px;
+}
+
+.teamActions {
+  margin-top: 6px;
+  padding-top: 2px;
 }
 
 .dashboardCards {
@@ -642,6 +652,11 @@
   padding: 22px;
 }
 
+.detailModalBody {
+  display: grid;
+  gap: 22px;
+}
+
 .modalHeader {
   display: flex;
   align-items: center;
@@ -679,6 +694,18 @@
   gap: 14px;
 }
 
+.detailSection {
+  display: grid;
+  gap: 14px;
+}
+
+.detailSectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .detailSessionCard {
   padding: 16px;
   border: 1px solid #e6e1d4;
@@ -698,15 +725,16 @@
   display: flex;
   flex-wrap: wrap;
   gap: 14px;
-  margin-top: 10px;
+  margin-top: 12px;
+  padding-top: 2px;
   color: #7b7b74;
   font-size: 0.94rem;
 }
 
 .drillItem {
   display: grid;
-  gap: 4px;
-  padding-top: 10px;
+  gap: 6px;
+  padding-top: 12px;
   border-top: 1px solid #ece6d8;
 }
 
