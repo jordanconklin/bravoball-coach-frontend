@@ -1,36 +1,119 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# BravoBall Coach Frontend
 
-## Getting Started
+Coach MVP web app for BravoBall.
 
-First, run the development server:
+This repo is a Next.js frontend that talks to the main BravoBall backend in:
+
+- `/Users/jordan/Desktop/bravoball/bravoball/backend`
+
+It is currently scoped to a lightweight coach workflow:
+
+- create teams
+- view team join codes
+- add players by username or email
+- view player roster stats
+- inspect per-player completed session history
+- view a basic coach dashboard with team totals, top players, and a training breakdown
+
+## Current MVP Status
+
+Implemented:
+
+- `Teams` view
+- `Players` view
+- `Dashboard` view
+- date filters:
+  - current week
+  - last week
+  - current month
+  - last month
+  - all time
+- player detail modal with session and drill history
+- coach analytics using existing BravoBall `CompletedSession` data
+
+Not finished yet:
+
+- real coach sign-in / sign-out
+- protected coach session shell
+- mobile player join-code flow
+- multi-manager support
+- coach-specific backend role model hardening
+
+## Backend Contract
+
+The frontend expects the BravoBall backend coach endpoints to exist.
+
+Main endpoints used:
+
+- `POST /api/coach/teams`
+- `GET /api/coach/teams/me`
+- `GET /api/coach/summary`
+- `GET /api/coach/teams/{team_id}/members`
+- `GET /api/coach/teams/{team_id}/members/{user_id}/sessions`
+- `GET /api/coach/dashboard`
+- `POST /api/coach/teams/{team_id}/members/by-username`
+
+For local MVP testing, the backend has been run with:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+DEV_COACH_BYPASS_AUTH_ENABLED=true
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+That bypass is only for local development.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Run Locally
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Install dependencies:
 
-## Learn More
+```bash
+npm install
+```
 
-To learn more about Next.js, take a look at the following resources:
+Start the frontend:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+npm run dev -- --hostname 0.0.0.0 --port 3000
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Open:
 
-## Deploy on Vercel
+- `http://localhost:3000`
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Local Backend
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Fastest local backend workflow is to run the BravoBall API directly instead of rebuilding Docker on every change:
+
+```bash
+cd /Users/jordan/Desktop/bravoball/bravoball/backend
+export DATABASE_URL='postgresql://jordan:123@localhost/bravoball'
+export DEV_COACH_BYPASS_AUTH_ENABLED=true
+python3 -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
+```
+
+If you want Docker parity instead:
+
+```bash
+cd /Users/jordan/Desktop/bravoball/bravoball
+docker build -f backend/Dockerfile -t bravoball-backend backend
+docker run -d \
+  --name bravoball-backend-local \
+  --env-file backend/.env \
+  -e DATABASE_URL='postgresql://jordan:123@host.docker.internal/bravoball' \
+  -e DEV_COACH_BYPASS_AUTH_ENABLED=true \
+  -p 8000:8000 \
+  bravoball-backend
+```
+
+## Design Notes
+
+- Styling follows the BravoBall landing page direction
+- Uses BravoBall mascot/logo assets
+- Includes the `Bravo_Panting.riv` asset for future auth/onboarding UI work
+
+## Project Notes
+
+Session summary and checkpoint tracking live here:
+
+- [docs/coach-mvp-checkpoints.md](./docs/coach-mvp-checkpoints.md)
+
+That file is the best handoff doc for continuing the MVP.
