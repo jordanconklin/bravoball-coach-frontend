@@ -125,6 +125,7 @@ type AuthFormState = {
   email: string;
   password: string;
   confirmPassword: string;
+  inviteCode: string;
 };
 
 type StoredConfig = {
@@ -333,6 +334,7 @@ export default function Home() {
     email: "",
     password: "",
     confirmPassword: "",
+    inviteCode: "",
   });
   const [authError, setAuthError] = useState<string | null>(null);
   const [authNotice, setAuthNotice] = useState<string | null>(null);
@@ -536,6 +538,10 @@ export default function Home() {
         setAuthError("First and last name are required.");
         return;
       }
+      if (!authForm.inviteCode.trim()) {
+        setAuthError("Coach invite code is required.");
+        return;
+      }
       if (password.length < 8) {
         setAuthError("Password must be at least 8 characters.");
         return;
@@ -557,6 +563,7 @@ export default function Home() {
               last_name: authForm.lastName.trim(),
               email,
               password,
+              invite_code: authForm.inviteCode.trim(),
             }
           : {
               email,
@@ -597,6 +604,7 @@ export default function Home() {
         email,
         password: "",
         confirmPassword: "",
+        inviteCode: "",
       });
       setAuthNotice(authMode === "signup" ? "Coach account created." : null);
     } catch (err) {
@@ -1086,6 +1094,20 @@ export default function Home() {
                     />
                   </label>
                 </div>
+              ) : null}
+
+              {authMode === "signup" ? (
+                <label className={styles.fieldLabel}>
+                  <span>Coach invite code</span>
+                  <input
+                    className={styles.textInput}
+                    value={authForm.inviteCode}
+                    onChange={(event) =>
+                      setAuthForm((current) => ({ ...current, inviteCode: event.target.value }))
+                    }
+                    placeholder="6-digit code"
+                  />
+                </label>
               ) : null}
 
               <label className={styles.fieldLabel}>
