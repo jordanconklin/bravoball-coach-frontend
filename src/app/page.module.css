@@ -258,7 +258,7 @@
 }
 
 .content {
-  padding: 28px 0 40px 28px;
+  padding: 28px 28px 40px 28px;
 }
 
 .contentHeader {
@@ -815,11 +815,14 @@
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(380px, 0.9fr);
   gap: 28px;
+  align-items: start;
 }
 
 .authIntro {
   display: grid;
   gap: 24px;
+  align-self: start;
+  align-content: start;
 }
 
 .authHeroCard {
@@ -864,10 +867,12 @@
   display: grid;
   gap: 18px;
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: stretch;
 }
 
 .highlightCard {
   padding: 20px;
+  min-height: 220px;
 }
 
 .highlightTitle {
@@ -1020,6 +1025,7 @@
 
   .content {
     padding-left: 28px;
+    padding-right: 28px;
   }
 }
 
