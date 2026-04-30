@@ -1131,18 +1131,6 @@ export default function Home() {
           </div>
 
           <div className={styles.topbarActions}>
-            <div className={styles.searchWrap}>
-              <input className={styles.searchInput} placeholder="Find a player..." />
-              <button className={styles.searchButton} aria-label="Search players">
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path
-                    d="M10.5 4a6.5 6.5 0 1 1 0 13a6.5 6.5 0 0 1 0-13Zm0 2a4.5 4.5 0 1 0 0 9a4.5 4.5 0 0 0 0-9Zm7.9 10.5 2.6 2.6-1.4 1.4-2.6-2.6 1.4-1.4Z"
-                    fill="currentColor"
-                  />
-                </svg>
-              </button>
-            </div>
-
             <div className={styles.sessionPill}>
               <span className={styles.sessionName}>{coachDisplayName(coachProfile)}</span>
               <span className={styles.sessionMeta}>{coachProfile?.email}</span>
@@ -1277,18 +1265,19 @@ export default function Home() {
                           className={`${team.id === selectedTeamId ? styles.selectedRow : ""} ${styles.clickableRow}`}
                           onClick={() => {
                             setSelectedTeamId(team.id);
-                            setActiveView("players");
                           }}
                         >
-                          <td>
+                          <td data-label="Team">
                             <div className={styles.teamCell}>
                               <span className={styles.teamName}>{team.name}</span>
                               <span className={styles.teamMeta}>Join code {team.join_code}</span>
                             </div>
                           </td>
-                          <td>{team.player_count}</td>
-                          <td>{formatMinutes(team.avg_time_per_player_minutes)}</td>
-                          <td>{formatMinutes(team.trained_minutes_in_range)}</td>
+                          <td data-label="Registration">{team.player_count}</td>
+                          <td data-label="Avg Time/Player">{formatMinutes(team.avg_time_per_player_minutes)}</td>
+                          <td data-label={trainedLabelForFilter(timeFilter)}>
+                            {formatMinutes(team.trained_minutes_in_range)}
+                          </td>
                         </tr>
                       ))
                     )}
@@ -1436,7 +1425,7 @@ export default function Home() {
                             void loadPlayerHistory(selectedTeamId, member.user_id);
                           }}
                         >
-                          <td>
+                          <td data-label="Name">
                             <div className={styles.teamCell}>
                               <span className={styles.teamName}>
                                 {member.full_name || member.username || `user-${member.user_id}`}
@@ -1444,13 +1433,13 @@ export default function Home() {
                               <span className={styles.teamMeta}>{member.email || member.username}</span>
                             </div>
                           </td>
-                          <td>{formatMinutes(member.total_trained_minutes)}</td>
-                          <td>{formatMinutes(member.technical_minutes)}</td>
-                          <td>{formatMinutes(member.physical_minutes)}</td>
-                          <td>{formatMinutes(member.mental_minutes)}</td>
-                          <td>{member.current_streak}d</td>
-                          <td>{member.best_streak}d</td>
-                          <td>
+                          <td data-label="Trained">{formatMinutes(member.total_trained_minutes)}</td>
+                          <td data-label="Technical">{formatMinutes(member.technical_minutes)}</td>
+                          <td data-label="Physical">{formatMinutes(member.physical_minutes)}</td>
+                          <td data-label="Mental">{formatMinutes(member.mental_minutes)}</td>
+                          <td data-label="Streak">{member.current_streak}d</td>
+                          <td data-label="Best">{member.best_streak}d</td>
+                          <td data-label="Actions">
                             <button
                               className={styles.tableDangerButton}
                               onClick={(event) => {
