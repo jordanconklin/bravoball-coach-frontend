@@ -118,7 +118,7 @@ type AuthFormState = {
 };
 
 const DEFAULT_TIME_FILTER: TimeFilter = "current_week";
-const DEFAULT_BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:8000";
+const API_BASE_PATH = "";
 
 const timeFilterOptions: { value: TimeFilter; label: string }[] = [
   { value: "current_week", label: "Current Week" },
@@ -335,7 +335,7 @@ export default function Home() {
 
   const refreshCoachSession = useCallback(
     async function refreshCoachSession() {
-      const response = await fetch(`${DEFAULT_BACKEND_URL}/api/coach/auth/refresh`, {
+      const response = await fetch(`${API_BASE_PATH}/api/coach/auth/refresh`, {
         method: "POST",
         credentials: "include",
         headers: {
@@ -356,7 +356,7 @@ export default function Home() {
       if (!headers.has("Content-Type")) {
         headers.set("Content-Type", "application/json");
       }
-      let response = await fetch(`${DEFAULT_BACKEND_URL}${path}`, {
+      let response = await fetch(`${API_BASE_PATH}${path}`, {
         ...init,
         credentials: "include",
         headers,
@@ -365,7 +365,7 @@ export default function Home() {
       if (response.status === 401 && retryOnRefresh) {
         try {
           await refreshCoachSession();
-          response = await fetch(`${DEFAULT_BACKEND_URL}${path}`, {
+          response = await fetch(`${API_BASE_PATH}${path}`, {
             ...init,
             credentials: "include",
             headers,
@@ -464,7 +464,7 @@ export default function Home() {
               password,
             };
 
-      const response = await fetch(`${DEFAULT_BACKEND_URL}${endpoint}`, {
+      const response = await fetch(`${API_BASE_PATH}${endpoint}`, {
         method: "POST",
         credentials: "include",
         headers: {
@@ -504,7 +504,7 @@ export default function Home() {
 
   async function handleCoachLogout() {
     try {
-      await fetch(`${DEFAULT_BACKEND_URL}/api/coach/auth/logout`, {
+      await fetch(`${API_BASE_PATH}/api/coach/auth/logout`, {
         method: "POST",
         credentials: "include",
         headers: {
