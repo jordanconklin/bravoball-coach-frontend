@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import posthog from "posthog-js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alignment, Fit, Layout, useRive } from "rive-react";
 import styles from "./page.module.css";
@@ -297,6 +298,31 @@ export default function Home() {
     layout: new Layout({ fit: Fit.Contain, alignment: Alignment.Center }),
   });
 
+  useEffect(() => {
+    const key = process.env.NEXT_PUBLIC_POSTHOG_KEY;
+    if (key) {
+      posthog.init(key, {
+        api_host: process.env.NEXT_PUBLIC_POSTHOG_HOST || "https://us.i.posthog.com",
+        capture_pageview: true,
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (coachProfile) {
+      posthog.identify(String(coachProfile.user_id), {
+        email: coachProfile.email,
+        username: coachProfile.username,
+      });
+    }
+  }, [coachProfile]);
+
+  useEffect(() => {
+    if (activeView === "dashboard" && authStatus === "authenticated") {
+      posthog.capture("coach_dashboard_visit");
+    }
+  }, [activeView, authStatus]);
+
   function applyCoachProfileToSettings(profile: CoachProfile | null) {
     setSettingsForm({
       firstName: profile?.first_name || "",
@@ -498,6 +524,7 @@ export default function Home() {
   }
 
   function signOutCoach() {
+    posthog.reset();
     clearCoachState();
     setAuthNotice("Signed out.");
   }
