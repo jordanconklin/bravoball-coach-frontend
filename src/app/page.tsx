@@ -97,6 +97,7 @@ type TimeFilter =
   | "all_time";
 
 type View = "teams" | "players" | "dashboard" | "settings";
+type CopyState = "idle" | "copied";
 type AuthMode = "signup" | "login";
 type AuthStatus = "loading" | "unauthenticated" | "authenticated";
 
@@ -240,6 +241,10 @@ function coachDisplayName(profile: CoachProfile | null) {
   return profile?.username || "Coach";
 }
 
+export function buildInviteLink(joinCode: string): string {
+  return `bravoball://join?code=${joinCode}`;
+}
+
 export default function Home() {
   const [coachProfile, setCoachProfile] = useState<CoachProfile | null>(null);
   const [authStatus, setAuthStatus] = useState<AuthStatus>("loading");
@@ -284,6 +289,7 @@ export default function Home() {
     currentPassword: "",
     confirmationText: "",
   });
+  const [copyState, setCopyState] = useState<CopyState>("idle");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -1323,6 +1329,22 @@ export default function Home() {
                   <span className={styles.joinCodeLabel}>Join Code</span>
                   <span className={styles.joinCodeValue}>{selectedTeam?.join_code ?? "--"}</span>
                 </div>
+                {selectedTeam ? (
+                  <button
+                    className={styles.primaryButton}
+                    style={{ marginTop: "8px", width: "100%" }}
+                    onClick={() => {
+                      void navigator.clipboard
+                        .writeText(buildInviteLink(selectedTeam.join_code))
+                        .then(() => {
+                          setCopyState("copied");
+                          setTimeout(() => setCopyState("idle"), 2000);
+                        });
+                    }}
+                  >
+                    {copyState === "copied" ? "Copied!" : "Copy invite link"}
+                  </button>
+                ) : null}
                 <div className={styles.quickStats}>
                   <div className={styles.quickStat}>
                     <span className={styles.quickStatLabel}>Players</span>
