@@ -649,6 +649,10 @@ export default function Home() {
     [selectedTeamId, teams],
   );
 
+  useEffect(() => {
+    setCopyState("idle");
+  }, [selectedTeam?.id ?? selectedTeam?.join_code]);
+
   const dashboardChart = useMemo(() => {
     const items = (dashboard?.breakdown ?? []).filter((item) => item.minutes > 0);
     const total = items.reduce((sum, item) => sum + item.minutes, 0);
@@ -1344,6 +1348,11 @@ export default function Home() {
                   >
                     {copyState === "copied" ? "Copied!" : "Copy invite link"}
                   </button>
+                ) : null}
+                {selectedTeam ? (
+                  <div style={{ marginTop: "4px", fontSize: "12px", color: "#888", wordBreak: "break-all" }}>
+                    {buildInviteLink(selectedTeam.join_code)}
+                  </div>
                 ) : null}
                 <div className={styles.quickStats}>
                   <div className={styles.quickStat}>
