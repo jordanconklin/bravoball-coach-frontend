@@ -1265,3 +1265,41 @@
     content: none !important;
   }
 }
+
+/* On-device drill verification badges (estimate, not proof). */
+.drillTitleRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.verifyBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px 3px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.4;
+  color: #4b4b4b;
+  background: #ece6d8;
+  box-shadow: 0 2px 0 #d9d2c2;
+}
+
+.verifyBadge_good {
+  color: #fff;
+  background: #70d412;
+  box-shadow: 0 2px 0 #60ae17;
+}
+
+.verifyBadge_mid {
+  color: #fff;
+  background: #f6c356;
+  box-shadow: 0 2px 0 #e6b547;
+}
+
+.verifySummary {
+  color: #7a42a8;
+  font-weight: 600;
+}

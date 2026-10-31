@@ -5,6 +5,14 @@ import posthog from "posthog-js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alignment, Fit, Layout, useRive } from "rive-react";
 import styles from "./page.module.css";
+import {
+  rosterVerificationCell,
+  sessionVerificationSummary,
+  verificationLabel,
+  verificationTone,
+  VERIFICATION_TOOLTIP,
+  type DrillVerification,
+} from "@/lib/verification";
 
 type TeamSummary = {
   id: number;
@@ -30,6 +38,8 @@ type TeamMember = {
   physical_minutes: number;
   mental_minutes: number;
   last_completed_session_at: string | null;
+  verified_sessions?: number;
+  checked_sessions?: number;
 };
 
 type TeamRoster = {
@@ -44,6 +54,7 @@ type PlayerCompletedDrill = {
   skill?: string | null;
   sub_skills: string[];
   duration_minutes: number;
+  verification?: DrillVerification | null;
 };
 
 type PlayerCompletedSession = {
@@ -55,6 +66,8 @@ type PlayerCompletedSession = {
   physical_minutes: number;
   mental_minutes: number;
   drills: PlayerCompletedDrill[];
+  verified_drills?: number;
+  checked_drills?: number;
 };
 
 type PlayerSessionHistory = {
@@ -1458,6 +1471,7 @@ export default function Home() {
                         </span>
                       </th>
                       <th>Mental</th>
+                      <th title={VERIFICATION_TOOLTIP}>Verified</th>
                       <th>Streak</th>
                       <th>Best</th>
                       <th>Actions</th>
@@ -1495,6 +1509,9 @@ export default function Home() {
                           <td data-label="Technical">{formatMinutes(member.technical_minutes)}</td>
                           <td data-label="Physical">{formatMinutes(member.physical_minutes)}</td>
                           <td data-label="Mental">{formatMinutes(member.mental_minutes)}</td>
+                          <td data-label="Verified" title={VERIFICATION_TOOLTIP}>
+                            {rosterVerificationCell(member.verified_sessions, member.checked_sessions)}
+                          </td>
                           <td data-label="Streak">{member.current_streak}d</td>
                           <td data-label="Best">{member.best_streak}d</td>
                           <td data-label="Actions">
@@ -1945,12 +1962,29 @@ export default function Home() {
                               <span>Technical {formatMinutes(session.technical_minutes)}</span>
                               <span>Physical {formatMinutes(session.physical_minutes)}</span>
                               <span>Mental {formatMinutes(session.mental_minutes)}</span>
+                              {sessionVerificationSummary(session.verified_drills, session.checked_drills) ? (
+                                <span className={styles.verifySummary} title={VERIFICATION_TOOLTIP}>
+                                  {sessionVerificationSummary(session.verified_drills, session.checked_drills)}
+                                </span>
+                              ) : null}
                             </div>
                             <div className={styles.drillList}>
                               {session.drills.length ? (
                                 session.drills.map((drill, index) => (
                                   <div key={`${session.session_id}-${index}`} className={styles.drillItem}>
-                                    <span className={styles.teamName}>{drill.title}</span>
+                                    <span className={styles.drillTitleRow}>
+                                      <span className={styles.teamName}>{drill.title}</span>
+                                      {drill.verification ? (
+                                        <span
+                                          className={`${styles.verifyBadge} ${
+                                            styles[`verifyBadge_${verificationTone(drill.verification.state)}`]
+                                          }`}
+                                          title={`${VERIFICATION_TOOLTIP} ${drill.verification.active_seconds}s of drill movement seen.`}
+                                        >
+                                          {verificationLabel(drill.verification.state)}
+                                        </span>
+                                      ) : null}
+                                    </span>
                                     <span className={styles.teamMeta}>
                                       {[drill.skill, ...drill.sub_skills].filter(Boolean).join(" • ")}
                                       {drill.duration_minutes ? ` • ${formatMinutes(drill.duration_minutes)}` : ""}
